@@ -11,7 +11,7 @@ struct NotchGeometry {
     let screen: NSScreen
     /// Height of the menu bar strip, in points.
     let menuBarHeight: CGFloat
-    /// The notch itself in screen coordinates — real or synthesised.
+    /// The notch itself in screen coordinates - real or synthesised.
     let notchRect: CGRect
     /// False when we invented the notch for a display that has none.
     let hasPhysicalNotch: Bool
@@ -26,14 +26,14 @@ struct NotchGeometry {
         }
     }
 
-    /// nil when there is no screen at all — every display asleep or unplugged.
+    /// nil when there is no screen at all - every display asleep or unplugged.
     static func current(preferred: NSScreen? = nil) -> NotchGeometry? {
         guard let screen = preferred ?? notchedScreen() ?? NSScreen.main ?? NSScreen.screens.first
         else { return nil }
         return NotchGeometry(screen: screen)
     }
 
-    /// Prefer the built-in display when it actually has a notch — that is where
+    /// Prefer the built-in display when it actually has a notch - that is where
     /// the user expects the dots to live.
     static func notchedScreen() -> NSScreen? {
         NSScreen.screens.first { $0.safeAreaInsets.top > 0 && $0.auxiliaryTopLeftArea != nil }

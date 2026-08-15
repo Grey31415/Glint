@@ -21,8 +21,19 @@ persistent website data store, so `swift run` starts but forgets the login on
 every launch.
 
 The bundle is ad-hoc signed, which is why Gatekeeper complains and why every
-rebuild looks like a new app to macOS. Fixing that properly needs a paid Apple
-Developer account and notarisation.
+rebuild looks like a new app to macOS. Fixing it properly needs a paid Apple
+Developer account and notarisation; there is no way around it from this side.
+
+Two things about that worth knowing, both of which caught out the install
+instructions here:
+
+- macOS 15 **removed** the Control-click → Open bypass. The only route without
+  Terminal is System Settings → Privacy & Security → **Open Anyway**, which
+  appears after the first blocked launch.
+- `xattr -dr` no longer exists - the `-r` flag was dropped. Recursive clearing is
+  `find <app> -exec xattr -d com.apple.quarantine {} \;`, and it has to be
+  recursive because the executable inside the bundle is quarantined separately
+  from the bundle itself.
 
 ```
 Sources/Glint/
@@ -36,7 +47,7 @@ Sources/Glint/
 
 There is no public unread-count API. Instagram's own web client calls these, so
 Glint keeps a signed-in session loaded in an off-screen `WKWebView` and issues
-the same requests *from inside that page* — the cookies come along, and the
+the same requests *from inside that page* - the cookies come along, and the
 result is exactly what the site would show you.
 
 ```
@@ -52,11 +63,11 @@ A thread whose newest entry is `item_type: "action_log"` with
 `action_log.is_reaction_log == true` is somebody reacting to a message **you**
 sent. That is an explicit flag rather than a text heuristic, so it does not rot
 when copy changes. `is_sent_by_viewer` corroborates it, cross-checked against the
-thread's own `viewer_id` because it is absent on some item shapes — notably
+thread's own `viewer_id` because it is absent on some item shapes - notably
 entries arriving via `last_permanent_item` rather than `items[0]`.
 
-Everything else — `text`, `media`, `voice_media`, `clip`, `media_share`,
-`story_share` — counts as a real message.
+Everything else - `text`, `media`, `voice_media`, `clip`, `media_share`,
+`story_share` - counts as a real message.
 
 ### Sorting the activity feed
 
@@ -75,7 +86,7 @@ Order matters when matching: `comment_like` contains "comment", and
 seen before.
 
 `story_like` is deliberately mapped to `other` and never counted. It was briefly
-its own category, but Instagram's `counts` object exposes no key for it — the
+its own category, but Instagram's `counts` object exposes no key for it - the
 number had to be derived from the unseen story list alone, which disagreed with
 the aggregates in the other direction and could not be made to add up. Story
 likes arrive constantly and mean little, so dropping them beats reporting them
@@ -91,7 +102,7 @@ exclusive, so nothing double counts.
 Instagram will not let anything be marked read from outside without opening the
 conversation, so this is a local watermark, not a read receipt: remember the
 count, show only what arrives after. It is clamped to the real count, so reading
-the messages properly releases it — it cannot silently mute you forever.
+the messages properly releases it - it cannot silently mute you forever.
 
 ## Where the dot goes
 
@@ -100,7 +111,7 @@ menu bar strips either side of the camera housing, so the gap between them *is*
 the notch. Displays without one get a 200pt notch invented in the middle of the
 menu bar.
 
-The panel floats at window level 25 — one above the menu bar — joins all Spaces,
+The panel floats at window level 25 - one above the menu bar - joins all Spaces,
 and accepts clicks **only** where something is drawn, so the menu bar underneath
 keeps working.
 
@@ -108,8 +119,8 @@ Cursor position is polled rather than observed, because a window with
 `ignoresMouseEvents = true` stops receiving mouse-moved events, and that flag is
 on most of the time. The poll idles at 8 Hz and steps up to 100 Hz near the dot.
 
-**Hidden mode** parks the dot at `notchRect.midX` — a region of the display with
-no pixels — so it is genuinely invisible rather than merely small.
+**Hidden mode** parks the dot at `notchRect.midX` - a region of the display with
+no pixels - so it is genuinely invisible rather than merely small.
 
 ## One surface, not two
 
@@ -122,14 +133,14 @@ learned the hard way. Two earlier versions produced a dot that appeared to fly i
 from the far corner when closing:
 
 1. The rectangle was derived from the dot's *centre*, making the pinned edge
-   depend on magnification — and magnification animates on a different spring
+   depend on magnification - and magnification animates on a different spring
    from the morph, so the two disagreed mid-flight.
 2. Contents were positioned as `rect.minX + (rect.width - contentWidth)`, two
    separately animated quantities that only cancel while both ease on the same
    curve. They are now pinned by layout alignment, so there is no arithmetic
    left to break.
 
-The menu also freezes the geometry it opened at — the feed refreshes on a timer,
+The menu also freezes the geometry it opened at - the feed refreshes on a timer,
 and arriving rows would otherwise resize it under the cursor.
 
 It opens on the dot, stays while the cursor is anywhere on the surface, and
@@ -142,7 +153,7 @@ Real Liquid Glass on macOS 26 via SwiftUICore's `glassEffect(_:in:)`, tinted by
 the accent, with a material-and-tint fallback for 14 and 15.
 
 The colour field is soft radial blobs, one per brand colour, each following its
-own pair of summed sines with irrational frequency ratios — so no blob repeats
+own pair of summed sines with irrational frequency ratios - so no blob repeats
 its path and no two fall back into step. It keeps rearranging instead of cycling.
 
 The canvas is a square sized for a **four-digit capsule**, not for the tile it
@@ -151,7 +162,7 @@ as the number gets longer, and a rotating one leaves the corners bare.
 
 Blob radius, drift and opacity were tuned by rendering variants and comparing
 them, because colours painted first are otherwise permanently buried by the ones
-painted last — two of Instagram's five would never have surfaced. Additive
+painted last - two of Instagram's five would never have surfaced. Additive
 blending was the obvious alternative and is wrong: overlaps blow out to white and
 every brand ends up pink. WhatsApp's greens, back when it had them, were ordered
 dark-to-light for the same reason.
@@ -168,7 +179,7 @@ GLINT_TRACE_MORPH=1 ...                                        # morph geometry 
 ```
 
 These exist because guessing at Instagram's response shapes is how you ship
-something that silently never works — which is exactly what happened to an
+something that silently never works - which is exactly what happened to an
 earlier WhatsApp provider, written against selectors that were never checked
 against a live account. Everything above was read off real data instead.
 
@@ -178,7 +189,7 @@ and reply the app makes.
 ## Limits
 
 - The dot sits where the frontmost app draws its menus. Clicks pass through, but
-  a long menu can overlap it — move it in Appearance, or use hidden mode.
+  a long menu can overlap it - move it in Appearance, or use hidden mode.
 - Instagram counts unread *conversations*, not individual messages.
 - These are private endpoints. They can change without warning; the probe above
   is how you find out what changed.

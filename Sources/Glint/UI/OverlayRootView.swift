@@ -122,7 +122,7 @@ struct OverlayRootView: View {
 
     @ViewBuilder
     private var menu: some View {
-        Text("Instagram — \(model.state.summary)")
+        Text("Instagram - \(model.state.summary)")
         if model.total > 0 {
             Button("Mark All as Read") { model.markAllRead() }
         }

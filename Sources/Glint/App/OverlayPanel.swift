@@ -26,7 +26,7 @@ final class OverlayPanel: NSPanel {
     }
 
     /// Needed so clicks land, but `.nonactivatingPanel` keeps the app in the
-    /// background — clicking a dot never steals focus from what you were doing.
+    /// background - clicking a dot never steals focus from what you were doing.
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }

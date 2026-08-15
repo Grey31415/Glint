@@ -6,7 +6,7 @@ import Foundation
 /// requests from the same page means the session cookies come along and we see
 /// exactly what the site would show you. Nothing is sent anywhere else.
 ///
-/// Shapes here were verified against a live account rather than assumed — see
+/// Shapes here were verified against a live account rather than assumed - see
 /// `GLINT_PROBE=1`, which dumps the structure of both responses.
 enum InstagramScript {
     /// The public web client's app id. Instagram rejects these endpoints without it.
@@ -77,7 +77,7 @@ enum InstagramScript {
           // tapped a heart on something you said".
           //
           // Cross-checked against the thread's own viewer id, because
-          // is_sent_by_viewer is absent on some item shapes — notably entries
+          // is_sent_by_viewer is absent on some item shapes - notably entries
           // that come back via last_permanent_item rather than items[0].
           mine: !!(it && (it.is_sent_by_viewer ||
                           (t.viewer_id !== undefined &&
@@ -94,8 +94,8 @@ enum InstagramScript {
 
     // --- activity feed -------------------------------------------------------
 
-    // notif_name is an exact, locale-independent key — post_like, comment_like,
-    // user_followed, comment, mentioned_comment and so on — so it is matched
+    // notif_name is an exact, locale-independent key - post_like, comment_like,
+    // user_followed, comment, mentioned_comment and so on - so it is matched
     // first and the rendered text is only a fallback for names not seen before.
     // Order matters throughout: "comment_like" contains "comment", and
     // "mentioned_comment" contains both.

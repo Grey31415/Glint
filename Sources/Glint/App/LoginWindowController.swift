@@ -5,7 +5,7 @@ import WebKit
 /// A plain browser window for signing in.
 ///
 /// It shares the website data store with the background view, so the cookies it
-/// earns are immediately the cookies the background view uses — no session
+/// earns are immediately the cookies the background view uses - no session
 /// juggling, and the sign-in survives a relaunch.
 @MainActor
 final class LoginWindowController {

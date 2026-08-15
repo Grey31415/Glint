@@ -66,7 +66,7 @@ final class Preferences: ObservableObject {
         set { store("horizontalOffset", newValue) }
     }
 
-    /// Park the dot inside the notch — a region of the display with no pixels —
+    /// Park the dot inside the notch - a region of the display with no pixels -
     /// so it is genuinely invisible until the cursor arrives there.
     var hiddenMode: Bool {
         get { value("hiddenMode", false) }
@@ -83,7 +83,7 @@ final class Preferences: ObservableObject {
     /// How close the cursor must come to the dot before the menu unfolds,
     /// in points.
     ///
-    /// This replaced two sliders — maximum magnification and cursor influence —
+    /// This replaced two sliders - maximum magnification and cursor influence -
     /// that the morph made redundant: the dot is only briefly visible at rest
     /// before it becomes the menu, so tuning how much it grew first had almost
     /// no observable effect. Magnification is now a fixed, subtle constant.

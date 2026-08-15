@@ -36,7 +36,7 @@ struct MorphingSurface<DotContent: View, MenuContent: View>: View {
     private var radius: CGFloat { MorphMetrics.radius(closed: closed, current: rect, t: t) }
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: radius, style: .continuous) }
 
-    /// The dot's colour does not vanish when the menu opens — it spreads into
+    /// The dot's colour does not vanish when the menu opens - it spreads into
     /// the glass as a bloom anchored where the dot was, so the surface still
     /// reads as having grown out of it.
     private var bloomSide: CGFloat {
@@ -76,7 +76,7 @@ struct MorphingSurface<DotContent: View, MenuContent: View>: View {
     }
 
     /// Sits in a dot-sized box pinned to the same edge, with the colour
-    /// overflowing symmetrically out of it — so it stays centred on where the
+    /// overflowing symmetrically out of it - so it stays centred on where the
     /// dot is without any position arithmetic of its own.
     private var bloom: some View {
         Color.clear
@@ -102,7 +102,7 @@ struct MorphingSurface<DotContent: View, MenuContent: View>: View {
 private struct MistyMask: View {
     let side: CGFloat
 
-    /// Sampled cosine falloff — smooth all the way to zero, no visible rim.
+    /// Sampled cosine falloff - smooth all the way to zero, no visible rim.
     private static let stops: [Gradient.Stop] = {
         let steps = 14
         return (0...steps).map { i in

@@ -9,7 +9,7 @@ import Foundation
 // Default is the macOS app-icon treatment: the artwork fills a rounded square
 // inset from the canvas, matching the proportions Apple uses (an 824pt body on
 // a 1024pt grid, corner radius 185.4). Artwork that already carries its own
-// silhouette — a cut-out with transparency — wants `--freeform` instead, which
+// silhouette - a cut-out with transparency - wants `--freeform` instead, which
 // scales it to fit and leaves the surround clear.
 //
 // Done in CoreGraphics rather than sips because sips cannot pad with alpha and

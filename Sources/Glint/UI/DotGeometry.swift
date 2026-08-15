@@ -5,7 +5,7 @@ import Foundation
 ///
 /// The Dock's magnification, reduced to the part that still applies when there
 /// is only one item: it grows as the cursor approaches. The falloff is a raised
-/// cosine — 1 under the cursor, 0 at the influence radius, flat at both ends —
+/// cosine - 1 under the cursor, 0 at the influence radius, flat at both ends -
 /// so nothing visibly pops as the cursor enters or leaves the field.
 enum DotGeometry {
     static func falloff(distance: CGFloat, radius: CGFloat) -> CGFloat {
@@ -56,13 +56,13 @@ enum DotGeometry {
         max(1, menuBarHeight / 2 - restHeight / 2)
     }
 
-    /// "3", "42", "99+" — capped so the capsule never has to grow unbounded.
+    /// "3", "42", "99+" - capped so the capsule never has to grow unbounded.
     static func countText(_ count: Int) -> String {
         count > 99 ? "99+" : String(count)
     }
 }
 
-/// The dot and the menu are not two views — they are one surface at two points
+/// The dot and the menu are not two views - they are one surface at two points
 /// along a morph. These are the endpoints, so the view that draws it and the
 /// controller that hit-tests it derive the same rectangle from the same numbers.
 enum MorphMetrics {
@@ -71,7 +71,7 @@ enum MorphMetrics {
 
     /// The dot as drawn, including any cursor magnification.
     ///
-    /// Anchored on `anchorX` — the notch-side edge, which never moves — rather
+    /// Anchored on `anchorX` - the notch-side edge, which never moves - rather
     /// than on the dot's centre. Centring would make the pinned edge depend on
     /// the magnification, and magnification animates on a different curve from
     /// the morph: the two disagree mid-flight and the surface visibly slides

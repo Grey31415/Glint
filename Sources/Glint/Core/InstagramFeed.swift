@@ -91,7 +91,7 @@ struct DirectThread: Identifiable, Equatable {
     let preview: String
     let kind: MessageKind
     let isUnread: Bool
-    /// True when the newest entry is one of yours — which is the case for a
+    /// True when the newest entry is one of yours - which is the case for a
     /// reaction, since the reaction sits on your own message.
     let isMine: Bool
     let isGroup: Bool
@@ -111,7 +111,7 @@ struct DirectThread: Identifiable, Equatable {
     /// Whether this belongs in the card at all.
     ///
     /// The card is a list of things waiting on you, not a history. Acknowledged
-    /// means *seen*: once a thread is read — anywhere, including on a phone —
+    /// means *seen*: once a thread is read - anywhere, including on a phone -
     /// it is done and disappears, as does anything you answered yourself.
     ///
     /// An earlier version also kept read-but-unanswered threads around for a
@@ -186,7 +186,7 @@ enum FeedState: Equatable {
         case .loading:        return "Connecting…"
         case .ready:          return "Connected"
         case .needsAuth:      return "Sign in required"
-        case .failed(let why): return "Error — \(why)"
+        case .failed(let why): return "Error - \(why)"
         }
     }
 }

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// What sits *inside* the surface while it is still dot-shaped: the number, the
 /// service mark once magnified, and the arc for states that are neither quiet
-/// nor lit. The surface itself — shape, glass, colour, glow — is drawn by
+/// nor lit. The surface itself - shape, glass, colour, glow - is drawn by
 /// `MorphingSurface`, because the dot and the menu are the same object.
 struct DotContentView: View {
     let count: Int

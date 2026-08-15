@@ -23,7 +23,7 @@
 ## What is it?
 
 A little dot next to the notch on your Mac. It lights up when someone messages
-you on Instagram. Point at it and you can see who wrote and what they said —
+you on Instagram. Point at it and you can see who wrote and what they said -
 without opening Instagram and losing twenty minutes.
 
 Made for people who deleted the app but still want to hear from their friends.
@@ -33,24 +33,42 @@ Made for people who deleted the app but still want to hear from their friends.
 | | |
 | --- | --- |
 | 🟣 **Colourful** | Someone actually wrote to you |
-| ⚪️ **Grey** | Just likes or reactions — nothing that needs you |
+| ⚪️ **Grey** | Just likes or reactions - nothing that needs you |
 | **Nothing there** | You're all caught up |
 
 Instagram treats a heart on something you posted the same as a friend asking you
 a question. Glint keeps them apart, so the number always means something.
 
 You can also switch on likes, comments, new followers, tags and message
-requests — each one separately, and all off to begin with.
+requests - each one separately, and all off to begin with.
 
 ## Installing
 
-1. [**Download Glint**](https://github.com/Grey31415/Glint/releases/latest/download/Glint.dmg)
-2. Open the file and drag Glint into your Applications folder
-3. **Right-click Glint → Open → Open**
+1. [**Download Glint**](https://github.com/Grey31415/Glint/releases/latest/download/Glint.dmg), open the file and drag Glint into your Applications folder.
 
-That third step is only needed the first time. macOS shows a warning because
-Glint isn't registered with Apple's paid developer programme — right-clicking
-tells it you're happy to run it anyway.
+2. Open Glint. macOS will say it *"could not verify that this app is free of
+   malware"* - click **Done**. This is expected: Glint isn't registered with
+   Apple's paid developer programme, so macOS doesn't recognise it.
+
+3. Open **System Settings → Privacy & Security**, scroll down to **Security**.
+   You'll see *"Glint was blocked to protect your Mac"* with an **Open Anyway**
+   button. Click it and confirm with Touch ID or your password.
+
+4. Open Glint again and click **Open**.
+
+That's a one-time thing. After that it just launches.
+
+<details>
+<summary>Prefer one Terminal command instead of steps 2-4?</summary>
+
+```sh
+find /Applications/Glint.app -exec xattr -d com.apple.quarantine {} \; 2>/dev/null
+```
+
+This removes the "downloaded from the internet" mark, after which Glint opens
+normally.
+
+</details>
 
 Then sign in to Instagram once, inside the app, and you're done.
 
@@ -89,7 +107,7 @@ anything.
 
 ## Something not working?
 
-Open Settings — it shows what Glint is doing and usually says what's wrong. If
+Open Settings - it shows what Glint is doing and usually says what's wrong. If
 Instagram signed you out, there's a button to sign back in.
 
 ---

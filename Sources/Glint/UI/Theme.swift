@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Glint renders on and around the notch, which is black on every machine
-/// regardless of appearance. The palette is deliberately dark-only — it is
+/// regardless of appearance. The palette is deliberately dark-only - it is
 /// hardware-matching, not theme-following.
 enum Palette {
     static let card       = Color(red: 0.055, green: 0.056, blue: 0.070)
@@ -33,7 +33,7 @@ struct Accent: Equatable {
         base: hex(0xB4287E),
         glow: hex(0xD62976))
 
-    /// Used when everything waiting is noise — reactions, likes — and nothing
+    /// Used when everything waiting is noise - reactions, likes - and nothing
     /// actually needs a reply. Same shapes, drained of urgency.
     static let quiet = Accent(
         colors: [hex(0x9AA0B5), hex(0x7C8394), hex(0x6C7386), hex(0x5A6072), hex(0x8A90A2)],
@@ -51,7 +51,7 @@ enum Motion {
     static let card = Animation.spring(response: 0.34, dampingFraction: 0.82)
     /// The dot stretching into the menu. Slightly slower and better damped than
     /// a normal pop, because the eye is following a shape change rather than a
-    /// thing appearing — overshoot here reads as wobble.
+    /// thing appearing - overshoot here reads as wobble.
     static let morph = Animation.spring(response: 0.38, dampingFraction: 0.86)
 }
 

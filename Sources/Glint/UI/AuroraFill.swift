@@ -3,7 +3,7 @@ import SwiftUI
 /// The lit interior of a dot: soft colour blobs wandering behind the mask.
 ///
 /// Two things matter here. First, the canvas is a **square**, sized by the
-/// caller to cover the widest capsule the dot could ever become — a fill that
+/// caller to cover the widest capsule the dot could ever become - a fill that
 /// merely matches the current shape runs out from under the tile the moment a
 /// number gets longer or the blobs drift.
 ///
@@ -21,7 +21,7 @@ struct AuroraFill: View {
     private static let frameInterval = 1.0 / 30.0
 
     /// Blob radius and drift, as fractions of `side`. Tuned together: blobs
-    /// small enough — and roaming far enough — that the ones painted first are
+    /// small enough - and roaming far enough - that the ones painted first are
     /// not permanently buried by the ones painted last. Widen the radius and
     /// the last two colours simply win forever.
     private static let blobRadius: CGFloat = 0.30

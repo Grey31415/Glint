@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 /// Optional menu bar item. The dot is the real interface, but a status item
-/// guarantees there is always a way to reach Settings and Quit — which matters
+/// guarantees there is always a way to reach Settings and Quit - which matters
 /// most in hidden mode, where the dot is invisible by design.
 @MainActor
 final class StatusItemController {
@@ -40,7 +40,7 @@ final class StatusItemController {
 
     private func sync() {
         // Strictly the user's choice. An earlier version forced the item back
-        // whenever the dot was invisible, which defeated hidden mode entirely —
+        // whenever the dot was invisible, which defeated hidden mode entirely -
         // the whole point is that nothing shows. Launching Glint from Spotlight
         // reopens Settings, so switching this off is never a dead end.
         guard preferences.showStatusItem else { return teardown() }
@@ -66,7 +66,7 @@ final class StatusItemController {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let status = NSMenuItem(title: "Instagram — \(model.state.summary)", action: nil, keyEquivalent: "")
+        let status = NSMenuItem(title: "Instagram - \(model.state.summary)", action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(status)
 

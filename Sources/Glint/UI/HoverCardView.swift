@@ -2,8 +2,8 @@ import SwiftUI
 
 /// The scoped view that unfolds from the dot.
 ///
-/// Deliberately spare. It answers two questions — who is waiting on you, and
-/// what is the rest of the noise — and then gets out of the way. Anything you
+/// Deliberately spare. It answers two questions - who is waiting on you, and
+/// what is the rest of the noise - and then gets out of the way. Anything you
 /// have already replied to is not here; the right-click menu carries the
 /// commands that would otherwise clutter it.
 struct HoverCardView: View {
@@ -83,7 +83,7 @@ struct HoverCardView: View {
 
     // MARK: - Header
 
-    /// One line. The split matters — "3 waiting" must never hide the fact that
+    /// One line. The split matters - "3 waiting" must never hide the fact that
     /// all three are hearts on something you already sent.
     private var header: some View {
         HStack(spacing: 8) {

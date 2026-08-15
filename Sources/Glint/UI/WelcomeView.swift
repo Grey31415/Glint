@@ -18,7 +18,7 @@ struct WelcomeView: View {
                       title: "Glint never sees your password",
                       detail: """
                       You sign in on Instagram's own page, opened in the standard macOS \
-                      web view — the same engine Safari uses. Your username and password \
+                      web view - the same engine Safari uses. Your username and password \
                       go straight to Instagram. Glint cannot read them, and does not store \
                       them.
                       """)
@@ -34,8 +34,8 @@ struct WelcomeView: View {
                 Point(symbol: "arrow.left.arrow.right",
                       title: "It only ever talks to instagram.com",
                       detail: """
-                      Glint makes the same two requests the website makes for itself — your \
-                      inbox and your activity feed — and reads the numbers out of the \
+                      Glint makes the same two requests the website makes for itself - your \
+                      inbox and your activity feed - and reads the numbers out of the \
                       replies. There is no analytics, no telemetry and no other destination.
                       """)
 
@@ -56,7 +56,7 @@ struct WelcomeView: View {
                     Text("Made in Germany by Greyson Wiesenack")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("Open source — you can read exactly what it sends.")
+                    Text("Open source - you can read exactly what it sends.")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -111,7 +111,7 @@ private struct Point: View {
     }
 }
 
-/// The same promise, restated above the sign-in page itself — the moment it
+/// The same promise, restated above the sign-in page itself - the moment it
 /// actually matters.
 struct LoginBanner: View {
     var body: some View {
@@ -119,7 +119,7 @@ struct LoginBanner: View {
             Image(systemName: "lock.fill")
                 .font(.system(size: 11))
                 .foregroundStyle(Accent.instagram.glow)
-            Text("This is Instagram's own sign-in page. Your password goes to Instagram, not to Glint — Glint only keeps the session cookie macOS stores for it on this Mac.")
+            Text("This is Instagram's own sign-in page. Your password goes to Instagram, not to Glint - Glint only keeps the session cookie macOS stores for it on this Mac.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

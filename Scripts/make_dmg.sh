@@ -32,18 +32,22 @@ Glint
 =======
 
 1. Drag Glint onto Applications.
-2. The first launch will be blocked, because this build is signed ad-hoc
-   rather than notarised by Apple. To open it anyway:
 
-     Right-click Glint in Applications -> Open -> Open
+2. Open Glint. macOS will say it could not verify the app - click Done.
+   This is expected: Glint is not registered with Apple's paid developer
+   programme, so macOS does not recognise it.
 
-   You only need to do this once.
+3. Open System Settings -> Privacy & Security, scroll down to Security.
+   You will see "Glint was blocked to protect your Mac" with an
+   "Open Anyway" button. Click it and confirm.
 
-   Or, from Terminal:
+4. Open Glint again and click Open. One time only.
 
-     xattr -dr com.apple.quarantine /Applications/Glint.app
+   Or, instead of steps 2-4, run this in Terminal:
 
-3. Glint lives beside the notch and has no Dock icon. Settings open
+     find /Applications/Glint.app -exec xattr -d com.apple.quarantine {} \; 2>/dev/null
+
+5. Glint lives beside the notch and has no Dock icon. Settings open
    automatically on first launch; after that, use the menu bar item or
    right-click the dot.
 

@@ -142,7 +142,7 @@ private struct AppearanceTab: View {
             Section {
                 Toggle("Hidden mode", isOn: prefs.binding(\.hiddenMode))
                 Text("""
-                Parks the dot inside the notch — a part of the display with no pixels — \
+                Parks the dot inside the notch - a part of the display with no pixels - \
                 so it is genuinely invisible. Move the cursor into the notch and it slides \
                 out. For when you would rather not know.
                 """)
@@ -237,7 +237,7 @@ private struct GeneralTab: View {
                 Text("""
                 You sign in on Instagram's own page in the standard macOS web view, so your \
                 password goes to Instagram and never through Glint. What is kept is the \
-                session cookie macOS stores for Glint on this Mac — the same way it stores \
+                session cookie macOS stores for Glint on this Mac - the same way it stores \
                 Safari's. Glint has no account and no server: it makes the same two requests \
                 the website makes for itself and reads the numbers out. No analytics, no \
                 telemetry.

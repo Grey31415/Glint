@@ -43,7 +43,7 @@ final class OverlayController: ObservableObject {
     ///
     /// Has to clear the drop shadow, not just the glow: SwiftUI's shadow blur
     /// reaches roughly 1.5x its radius, and at 16pt the menu's shadow was being
-    /// cut off square by the panel bounds — a hard vertical edge down its left
+    /// cut off square by the panel bounds - a hard vertical edge down its left
     /// side.
     private let edgeMargin: CGFloat = 40
     /// Vertical room reserved for the card.
@@ -153,7 +153,7 @@ final class OverlayController: ObservableObject {
 
         // The panel has to span everything that can be drawn: the dot parked
         // inside the notch, the dot revealed beside it, and the card hanging
-        // below — which extends *away* from the notch and is far wider than
+        // below - which extends *away* from the notch and is far wider than
         // the dot, so it sets the outer edge.
         let cardWidth = preferences.showHoverCard ? HoverCardView.width : 0
         let dotHalf = DotGeometry.capsuleWidth(digits: 4, height: dot) * maxScale / 2 + edgeMargin
@@ -240,7 +240,7 @@ final class OverlayController: ObservableObject {
         let inNotch = point.map { geo.notchRect.insetBy(dx: -6, dy: -6).contains($0) } ?? false
         let live = withinLiveRegion(point)
 
-        // Distance from the dot's *rectangle*, in both axes at once — zero while
+        // Distance from the dot's *rectangle*, in both axes at once - zero while
         // the cursor is over it.
         //
         // This used to be `abs(point.x - dotCentre)` with a fixed vertical band,
@@ -268,7 +268,7 @@ final class OverlayController: ObservableObject {
         // Opening requires the *dot* specifically, not merely the live region.
         // In hidden mode the live region includes the notch, and opening from
         // there would unfold the menu while it was still parked behind the
-        // camera housing — which is what made it appear half-eaten by the notch.
+        // camera housing - which is what made it appear half-eaten by the notch.
         let overDot = visible && distance <= CGFloat(preferences.hoverSensitivity)
         let shouldOpen = preferences.showHoverCard && isDotVisible
             && (overDot || (isCardOpen && live))
@@ -380,8 +380,8 @@ final class OverlayController: ObservableObject {
 
     /// True while the cursor is anywhere in the currently live region.
     ///
-    /// Two parts: a forgiving band around the dot — the resting dot is only a
-    /// few points wide and would otherwise be an unfair target — and, once
+    /// Two parts: a forgiving band around the dot - the resting dot is only a
+    /// few points wide and would otherwise be an unfair target - and, once
     /// open, the surface itself. The surface grows *out of* the dot, so the
     /// pointer never has to cross dead space to reach the menu.
     private func withinLiveRegion(_ point: CGPoint?) -> Bool {

@@ -68,7 +68,7 @@ final class InstagramSource: ObservableObject {
         poll()
     }
 
-    /// Full page reload — heavier than `refresh`, used when the session looks wedged.
+    /// Full page reload - heavier than `refresh`, used when the session looks wedged.
     func reload() { load() }
 
     /// `GLINT_PROBE=1` dumps the taxonomy of both endpoints: every distinct
@@ -185,7 +185,7 @@ final class InstagramSource: ObservableObject {
 
     private func poll() {
         guard running, let webView, !inFlight else { return }
-        // Relative fetches cannot resolve until a real page is loaded — on
+        // Relative fetches cannot resolve until a real page is loaded - on
         // about:blank they fail with "URL is not valid", which is noise rather
         // than a fault worth showing.
         guard hasLoadedPage, let host = webView.url?.host, host.contains("instagram.com") else {
@@ -374,7 +374,7 @@ final class InstagramSource: ObservableObject {
                 MainActor.assumeIsolated {
                     self.state = .needsAuth
                     self.feed = InstagramFeed()
-                    self.diagnostics = "Signed out — session erased from this Mac"
+                    self.diagnostics = "Signed out - session erased from this Mac"
                     self.load()
                     completion?()
                 }

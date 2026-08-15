@@ -15,6 +15,8 @@ struct SettingsView: View {
                 .tabItem { Label("Appearance", systemImage: "paintbrush") }
             GeneralTab(model: model, prefs: prefs)
                 .tabItem { Label("General", systemImage: "gearshape") }
+            AboutTab()
+                .tabItem { Label("About", systemImage: "info.circle") }
         }
         .padding(18)
         .frame(width: 580, height: 540)
@@ -199,10 +201,6 @@ private struct GeneralTab: View {
     @ObservedObject var model: GlintModel
     @ObservedObject var prefs: Preferences
 
-    private var version: String {
-        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "dev"
-    }
-
     var body: some View {
         Form {
             Section {
@@ -258,10 +256,64 @@ private struct GeneralTab: View {
             }
 
             Section {
-                LabeledContent("Glint", value: version)
                 Button("Quit Glint") { NSApp.terminate(nil) }
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+
+// MARK: - About
+
+private struct AboutTab: View {
+    private var version: String {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        switch (short, build) {
+        case let (s?, b?): return "Version \(s) (\(b))"
+        case let (s?, nil): return "Version \(s)"
+        default: return "Development build"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 96, height: 96)
+                .padding(.bottom, 14)
+
+            Text("Glint")
+                .font(.system(size: 30, weight: .semibold))
+            Text(version)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .padding(.top, 2)
+
+            Text("Stay in the loop without getting lost")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .padding(.top, 12)
+
+            Divider()
+                .frame(width: 180)
+                .padding(.vertical, 16)
+
+            Text("Made in Germany by Greyson Wiesenack")
+                .font(.system(size: 13, weight: .medium))
+
+            Link("github.com/Grey31415/Glint",
+                 destination: URL(string: "https://github.com/Grey31415/Glint")!)
+                .font(.system(size: 12))
+                .padding(.top, 8)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
     }
 }

@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Glint</string>
 	<key>CFBundleExecutable</key>
 	<string>Glint</string>
 	<key>CFBundleIconFile</key>
@@ -13,8 +15,6 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Glint</string>
-	<key>CFBundleDisplayName</key>
 	<string>Glint</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
@@ -26,11 +26,12 @@
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
-	<!-- No Dock icon and no app menu: Glint is only the dots by the notch. -->
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Made in Germany by Greyson Wiesenack</string>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
 </dict>

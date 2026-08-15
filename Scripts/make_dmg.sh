@@ -67,6 +67,10 @@ Glint asks you to sign in to Instagram. What that means:
   * Settings -> Sign out erases the stored session from this Mac.
 
 The app explains all of this on first launch, before asking for anything.
+
+
+Made in Germany by Greyson Wiesenack
+https://github.com/Grey31415/Glint
 TXT
 
 mkdir -p "$DIST"

@@ -136,3 +136,11 @@ something that silently never works.
 - Instagram counts unread *conversations*, not individual messages.
 - These are private endpoints and can change without warning.
 - Rebuilding changes the ad-hoc signature, so macOS treats it as a new app.
+
+---
+
+<div align="center">
+
+Made in Germany by **Greyson Wiesenack**
+
+</div>

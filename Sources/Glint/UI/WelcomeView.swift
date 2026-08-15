@@ -52,9 +52,14 @@ struct WelcomeView: View {
             Spacer(minLength: 18)
 
             HStack(spacing: 10) {
-                Text("Open source — you can read exactly what it sends.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Made in Germany by Greyson Wiesenack")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("Open source — you can read exactly what it sends.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
                 Spacer()
                 Button("Not now", action: onLater)
                 Button("Connect Instagram", action: onConnect)

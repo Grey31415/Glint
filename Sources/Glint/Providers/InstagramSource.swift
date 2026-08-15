@@ -6,7 +6,7 @@ import WebKit
 /// inbox and activity feed out of it.
 ///
 /// Instagram has no public unread API. Its own web client calls the endpoints
-/// in `InstagramScript`, so Notifly runs the same requests from inside the same
+/// in `InstagramScript`, so Glint runs the same requests from inside the same
 /// page: the cookies come along automatically and the result is exactly what
 /// the site would show. Nothing leaves the machine.
 @MainActor
@@ -24,13 +24,15 @@ final class InstagramSource: ObservableObject {
     private var loginWindow: LoginWindowController?
     private var interstitialBounces = 0
     private var inFlight = false
+    /// Set once a real instagram.com page has finished loading.
+    private var hasLoadedPage = false
     private var running = false
 
     static let trackingURL = URL(string: "https://www.instagram.com/direct/inbox/")!
     static let loginURL = URL(string: "https://www.instagram.com/accounts/login/")!
     static let activityURL = URL(string: "https://www.instagram.com/accounts/activity/")!
 
-    static let debugLogging = ProcessInfo.processInfo.environment["NOTIFLY_DEBUG"] == "1"
+    static let debugLogging = ProcessInfo.processInfo.environment["GLINT_DEBUG"] == "1"
 
     init(preferences: Preferences) {
         self.preferences = preferences
@@ -75,7 +77,7 @@ final class InstagramSource: ObservableObject {
     }()
 
     private static let userAgent =
-        ProcessInfo.processInfo.environment["NOTIFLY_UA"]
+        ProcessInfo.processInfo.environment["GLINT_UA"]
         ?? ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
             + "(KHTML, like Gecko) Version/18.0 Safari/605.1.15")
 
@@ -100,6 +102,7 @@ final class InstagramSource: ObservableObject {
 
     private func load() {
         guard let webView else { return }
+        hasLoadedPage = false
         webView.load(URLRequest(url: Self.trackingURL,
                                 cachePolicy: .reloadRevalidatingCacheData,
                                 timeoutInterval: 30))
@@ -125,6 +128,19 @@ final class InstagramSource: ObservableObject {
 
     private func poll() {
         guard running, let webView, !inFlight else { return }
+        // Relative fetches cannot resolve until a real page is loaded — on
+        // about:blank they fail with "URL is not valid", which is noise rather
+        // than a fault worth showing.
+        guard hasLoadedPage, let host = webView.url?.host, host.contains("instagram.com") else {
+            diagnostics = "Waiting for instagram.com to load…"
+            if Self.debugLogging {
+                NSLog("[Glint:wait] loaded=%@ url=%@ loading=%@",
+                      hasLoadedPage ? "y" : "n",
+                      webView.url?.absoluteString ?? "nil",
+                      webView.isLoading ? "y" : "n")
+            }
+            return
+        }
         inFlight = true
         webView.callAsyncJavaScript(InstagramScript.payload,
                                     arguments: [:],
@@ -147,7 +163,7 @@ final class InstagramSource: ObservableObject {
     }
 
     private func apply(_ json: String) {
-        if Self.debugLogging { NSLog("[Notifly:ig] %@", json.prefix(1200).description) }
+        if Self.debugLogging { NSLog("[Glint:ig] %@", json.prefix(1200).description) }
 
         guard let data = json.data(using: .utf8),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
@@ -211,7 +227,7 @@ final class InstagramSource: ObservableObject {
         state = .ready
         lastUpdate = Date()
         if Self.debugLogging {
-            NSLog("[Notifly:parsed] threads=%d unreadMsg=%d unreadReact=%d activity=%d counts=%@",
+            NSLog("[Glint:parsed] threads=%d unreadMsg=%d unreadReact=%d activity=%d counts=%@",
                   next.threads.count, next.unreadMessages.count, next.unreadReactions.count,
                   next.activity.count, String(describing: next.activityCounts))
         }
@@ -230,6 +246,7 @@ final class InstagramSource: ObservableObject {
 
     private func handleNavigation(to url: URL?) {
         guard let url else { return }
+        if Self.debugLogging { NSLog("[Glint:nav] %@", url.absoluteString) }
         if url.path.contains("/accounts/onetap") {
             guard interstitialBounces < 3 else {
                 state = .needsAuth
@@ -246,12 +263,16 @@ final class InstagramSource: ObservableObject {
             return
         }
         interstitialBounces = 0
+        hasLoadedPage = url.host?.contains("instagram.com") ?? false
         // Give the SPA a moment to settle before the first read.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.poll() }
     }
 
     private func handleFailure(_ error: Error) {
         let nsError = error as NSError
+        if Self.debugLogging {
+            NSLog("[Glint:navfail] %@ (%d)", nsError.localizedDescription, nsError.code)
+        }
         guard !(nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled) else { return }
         if case .ready = state {
             diagnostics = "Load failed: \(nsError.localizedDescription)"

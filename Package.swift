@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "Notifly",
+    name: "Glint",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "Notifly",
-            path: "Sources/Notifly",
+            name: "Glint",
+            path: "Sources/Glint",
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [.linkedLibrary("sqlite3")]
         )

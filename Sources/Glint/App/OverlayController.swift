@@ -10,8 +10,9 @@ struct OverlayLayout: Equatable {
     var side: DockSide = .left
     /// Centre of the dot.
     var dotCenterX: CGFloat = 0
-    /// Where the hover card's notch-side edge sits.
-    var cardEdgeX: CGFloat = 0
+    /// The notch-side edge the surface is anchored on. Fixed: it does not move
+    /// with magnification, so the morph has nothing to slide against.
+    var anchorX: CGFloat = 0
 }
 
 /// Owns the floating panel: positions it beside (or inside) the notch, tracks
@@ -23,8 +24,15 @@ final class OverlayController: ObservableObject {
     @Published private(set) var scale: CGFloat = 1
     @Published private(set) var isRevealed = false        // hidden mode only
     @Published private(set) var isCardOpen = false
+    /// Geometry captured the moment the menu opened.
+    ///
+    /// The feed refreshes on a timer, and rows arriving or leaving would
+    /// otherwise resize the menu under the cursor while it is being read. The
+    /// menu holds the shape it opened at until it closes; content that outgrows
+    /// it scrolls instead of pushing the edges around.
+    @Published private(set) var frozenOpen: CGRect?
 
-    let model: NotiflyModel
+    let model: GlintModel
     let preferences: Preferences
     let tracker = MouseTracker()
 
@@ -39,9 +47,10 @@ final class OverlayController: ObservableObject {
     private var panel: OverlayPanel?
     private var bag = Set<AnyCancellable>()
     private var geometry: NotchGeometry?
-    private var cardHeight: CGFloat = 0
+    /// Measured height of the menu contents; the morph interpolates towards it.
+    private(set) var measuredCardHeight: CGFloat = 0
 
-    init(model: NotiflyModel, preferences: Preferences) {
+    init(model: GlintModel, preferences: Preferences) {
         self.model = model
         self.preferences = preferences
     }
@@ -158,18 +167,12 @@ final class OverlayController: ObservableObject {
         let localAnchor = anchorScreenX - frame.minX
         let dotCenterX = preferences.side == .left ? localAnchor - restW / 2 : localAnchor + restW / 2
 
-        // The card hangs off the dot, not off the notch, so it stays attached
-        // to the thing it belongs to — including while the dot is sliding out
-        // in hidden mode.
-        let cardOverhang: CGFloat = 14
         layout = OverlayLayout(panelSize: frame.size,
                                menuBarHeight: geo.menuBarHeight,
                                dotSize: dot,
                                side: preferences.side,
                                dotCenterX: dotCenterX,
-                               cardEdgeX: preferences.side == .left
-                                   ? dotCenterX + cardOverhang
-                                   : dotCenterX - cardOverhang)
+                               anchorX: localAnchor)
 
         updateInterestRect()
         cursorMoved(to: tracker.location)
@@ -198,12 +201,14 @@ final class OverlayController: ObservableObject {
                           width: triggerMaxX - triggerMinX,
                           height: geo.menuBarHeight + 40)
         if isCardOpen {
-            let cardRight = panel.frame.minX + layout.cardEdgeX
-            let cardRect = CGRect(x: preferences.side == .left ? cardRight - HoverCardView.width : cardRight,
-                                  y: panel.frame.maxY - geo.menuBarHeight - cardMaxHeight,
-                                  width: HoverCardView.width,
-                                  height: cardMaxHeight)
-            rect = rect.union(cardRect).insetBy(dx: -12, dy: -12)
+            // Track the surface at full size, so the cursor is still being
+            // sampled anywhere over the open menu.
+            let open = frozenOpen ?? currentOpenRect()
+            let openScreen = CGRect(x: panel.frame.minX + open.minX,
+                                    y: panel.frame.maxY - open.maxY,
+                                    width: open.width,
+                                    height: open.height)
+            rect = rect.union(openScreen).insetBy(dx: -12, dy: -12)
         }
         tracker.interestRect = rect
     }
@@ -251,6 +256,7 @@ final class OverlayController: ObservableObject {
         let overDot = visible && inStrip && distance < max(22, layout.dotSize * scale)
         let shouldOpen = preferences.showHoverCard && isDotVisible && (overDot || live)
         if shouldOpen != isCardOpen {
+            frozenOpen = shouldOpen ? currentOpenRect() : nil
             withAnimation(Motion.card) { isCardOpen = shouldOpen }
             updateInterestRect()
         }
@@ -258,20 +264,51 @@ final class OverlayController: ObservableObject {
         updateMouseEvents(point: point, overDot: overDot)
     }
 
-    /// The card's measured height, reported by the view. Using the real height
-    /// rather than the reserved maximum is what lets the card close the moment
-    /// the cursor drops below it.
+    /// The menu's measured height, reported by the view. Using the real height
+    /// rather than a reserved maximum is what lets the surface close the moment
+    /// the cursor drops past its actual bottom edge.
     func setCardHeight(_ height: CGFloat) {
-        guard abs(height - cardHeight) > 0.5 else { return }
-        cardHeight = height
+        guard abs(height - measuredCardHeight) > 0.5 else { return }
+        measuredCardHeight = height
     }
 
-    /// True while the cursor is anywhere in the currently live region — the dot
-    /// plus, when open, the card. Gives the pointer somewhere to travel.
+    /// The dot as currently drawn, in panel-local coordinates. Same maths the
+    /// view uses, so what is clickable is exactly what is on screen.
+    private var closedRect: CGRect {
+        MorphMetrics.closedRect(anchorX: layout.anchorX,
+                                side: layout.side,
+                                menuBarHeight: layout.menuBarHeight,
+                                dotSize: layout.dotSize,
+                                count: model.total,
+                                showCount: preferences.showCountAtRest,
+                                progress: progress,
+                                scale: scale)
+    }
+
+    /// The menu rectangle as it would be right now, before freezing.
+    private func currentOpenRect() -> CGRect {
+        MorphMetrics.openRect(anchorX: layout.anchorX,
+                              side: preferences.side,
+                              closed: closedRect,
+                              cardWidth: HoverCardView.width,
+                              cardHeight: measuredCardHeight > 0 ? measuredCardHeight : 200)
+    }
+
+    /// True while the cursor is anywhere in the currently live region.
+    ///
+    /// Two parts: a forgiving band around the dot — the resting dot is only a
+    /// few points wide and would otherwise be an unfair target — and, once
+    /// open, the surface itself. The surface grows *out of* the dot, so the
+    /// pointer never has to cross dead space to reach the menu.
     private func withinLiveRegion(_ point: CGPoint?) -> Bool {
         guard let point, let panel, let geo = geometry else { return false }
-        // The dot's band spans the full menu bar strip so the pointer can move
-        // straight down into the card without crossing dead space.
+        let toScreen = { (r: CGRect) -> CGRect in
+            CGRect(x: panel.frame.minX + r.minX,
+                   y: panel.frame.maxY - r.maxY,
+                   width: r.width,
+                   height: r.height)
+        }
+
         var region = CGRect(x: panel.frame.minX + layout.dotCenterX - 44,
                             y: panel.frame.maxY - geo.menuBarHeight,
                             width: 88,
@@ -280,16 +317,10 @@ final class OverlayController: ObservableObject {
             region = region.union(geo.notchRect.insetBy(dx: -6, dy: -6))
         }
         if isCardOpen {
-            let edge = panel.frame.minX + layout.cardEdgeX
-            let height = cardHeight > 0 ? cardHeight : 120
-            region = region.union(CGRect(
-                x: preferences.side == .left ? edge - HoverCardView.width : edge,
-                y: panel.frame.maxY - geo.menuBarHeight - height,
-                width: HoverCardView.width,
-                height: height))
+            region = region.union(toScreen(frozenOpen ?? currentOpenRect()))
         }
         // A few points of slack absorbs sub-pixel jitter at the edges without
-        // making the card linger anywhere it is not actually under the cursor.
+        // making the menu linger anywhere it is not actually under the cursor.
         return region.insetBy(dx: -4, dy: -4).contains(point)
     }
 

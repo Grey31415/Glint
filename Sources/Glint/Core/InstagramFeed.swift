@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-/// The buckets Notifly counts and shows separately.
+/// The buckets Glint counts and shows separately.
 ///
 /// `messages` and `reactions` are deliberately distinct: a reply carries
 /// information, a heart tapped on something you already sent does not. Lumping

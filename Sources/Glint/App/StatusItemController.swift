@@ -6,14 +6,14 @@ import Combine
 /// most in hidden mode, where the dot is invisible by design.
 @MainActor
 final class StatusItemController {
-    private let model: NotiflyModel
+    private let model: GlintModel
     private let preferences: Preferences
     private let onOpenSettings: () -> Void
 
     private var item: NSStatusItem?
     private var bag = Set<AnyCancellable>()
 
-    init(model: NotiflyModel, preferences: Preferences, onOpenSettings: @escaping () -> Void) {
+    init(model: GlintModel, preferences: Preferences, onOpenSettings: @escaping () -> Void) {
         self.model = model
         self.preferences = preferences
         self.onOpenSettings = onOpenSettings
@@ -54,7 +54,7 @@ final class StatusItemController {
         let item = self.item ?? {
             let new = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             new.button?.image = NSImage(systemSymbolName: "smallcircle.filled.circle",
-                                        accessibilityDescription: "Notifly")
+                                        accessibilityDescription: "Glint")
             new.button?.imagePosition = .imageLeading
             self.item = new
             return new
@@ -103,7 +103,7 @@ final class StatusItemController {
         menu.addItem(targeted("Refresh Now", #selector(MenuTarget.refresh)))
         menu.addItem(targeted("Settings…", #selector(MenuTarget.openSettings), key: ","))
         menu.addItem(.separator())
-        menu.addItem(targeted("Quit Notifly", #selector(MenuTarget.quit), key: "q"))
+        menu.addItem(targeted("Quit Glint", #selector(MenuTarget.quit), key: "q"))
         return menu
     }
 

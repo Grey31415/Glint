@@ -17,7 +17,7 @@ struct KindSummary: Identifiable, Equatable {
 /// toggles and read-watermarks, and publishes the numbers the dot and the hover
 /// card render.
 @MainActor
-final class NotiflyModel: ObservableObject {
+final class GlintModel: ObservableObject {
     @Published private(set) var summaries: [KindSummary] = []
     @Published private(set) var total: Int = 0
     @Published private(set) var arrivalTick: Int = 0
@@ -105,7 +105,7 @@ final class NotiflyModel: ObservableObject {
 
         if InstagramSource.debugLogging {
             let rows = cardThreads()
-            NSLog("[Notifly:card] total=%d rows=%d %@", newTotal, rows.count,
+            NSLog("[Glint:card] total=%d rows=%d %@", newTotal, rows.count,
                   rows.map { "\($0.title)/\($0.kind.rawValue)\($0.isUnread ? "*" : "")" }
                       .joined(separator: ", "))
         }

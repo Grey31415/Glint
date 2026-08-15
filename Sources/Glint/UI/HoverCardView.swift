@@ -7,7 +7,7 @@ import SwiftUI
 /// have already replied to is not here; the right-click menu carries the
 /// commands that would otherwise clutter it.
 struct HoverCardView: View {
-    @ObservedObject var model: NotiflyModel
+    @ObservedObject var model: GlintModel
     @ObservedObject var prefs: Preferences
     let onOpenSettings: () -> Void
 
@@ -23,14 +23,6 @@ struct HoverCardView: View {
     }
 
     private var isEmpty: Bool { threads.isEmpty && activityRows.isEmpty }
-
-    /// Square at the top so the card reads as the menu bar continuing downwards
-    /// rather than as a floating window laid over it.
-    private var shape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 14,
-                               bottomTrailingRadius: 14, topTrailingRadius: 0,
-                               style: .continuous)
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -68,11 +60,8 @@ struct HoverCardView: View {
             }
         }
         .frame(width: Self.width, alignment: .leading)
-        .background(shape.fill(Palette.card))
-        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 0.5))
-        // Softer than a window shadow: enough to lift it off the wallpaper,
-        // not enough to read as a separate surface.
-        .shadow(color: .black.opacity(0.38), radius: 11, y: 5)
+        // No background, border or shadow here: this is the *contents* of the
+        // morphing surface, which supplies the glass and the shape.
     }
 
     private var hairline: some View {
@@ -132,7 +121,7 @@ struct HoverCardView: View {
 
     private var signInPrompt: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text("Notifly needs a signed-in Instagram session.")
+            Text("Glint needs a signed-in Instagram session.")
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.textMid)
                 .fixedSize(horizontal: false, vertical: true)
@@ -181,7 +170,7 @@ private struct ThreadRow: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
-            .background(hovering ? Palette.cardRaised : .clear)
+            .background(hovering ? Color.white.opacity(0.10) : .clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -201,7 +190,7 @@ private struct ThreadRow: View {
                 Circle()
                     .fill(Accent.instagram.glow)
                     .frame(width: 6, height: 6)
-                    .overlay(Circle().strokeBorder(Palette.card, lineWidth: 1.5))
+                    .overlay(Circle().strokeBorder(.black.opacity(0.35), lineWidth: 1.2))
                     .offset(x: 2, y: -2)
             }
         }
@@ -241,7 +230,7 @@ private struct ActivityRow: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
-                .background(hovering ? Palette.cardRaised : .clear)
+                .background(hovering ? Color.white.opacity(0.10) : .clear)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

@@ -1,6 +1,6 @@
 import AppKit
 
-/// Everything Notifly needs to know about where the notch is on a given screen.
+/// Everything Glint needs to know about where the notch is on a given screen.
 ///
 /// On notched Macs `auxiliaryTopLeftArea` / `auxiliaryTopRightArea` describe the
 /// usable menu bar strips on either side of the camera housing, so the gap

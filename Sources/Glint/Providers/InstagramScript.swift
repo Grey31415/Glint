@@ -7,7 +7,7 @@ import Foundation
 /// exactly what the site would show you. Nothing is sent anywhere else.
 ///
 /// Shapes here were verified against a live account rather than assumed — see
-/// `NOTIFLY_PROBE=1`, which dumps the structure of both responses.
+/// `GLINT_PROBE=1`, which dumps the structure of both responses.
 enum InstagramScript {
     /// The public web client's app id. Instagram rejects these endpoints without it.
     static let appID = "936619743392459"

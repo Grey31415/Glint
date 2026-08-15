@@ -164,7 +164,7 @@ final class Preferences: ObservableObject {
                     if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
                 }
             } catch {
-                NSLog("[Notifly] login item toggle failed: \(error.localizedDescription)")
+                NSLog("[Glint] login item toggle failed: \(error.localizedDescription)")
             }
         }
     }

@@ -8,7 +8,7 @@ private let appDelegate = MainActor.assumeIsolated { AppDelegate() }
 MainActor.assumeIsolated {
     let application = NSApplication.shared
     application.delegate = appDelegate
-    // No Dock icon and no app menu — Notifly is only ever the dots beside the
+    // No Dock icon and no app menu — Glint is only ever the dots beside the
     // notch plus an optional status item.
     application.setActivationPolicy(.accessory)
     application.run()

@@ -1,4 +1,4 @@
-# Notifly
+# Glint
 
 A colour dot beside the notch that tells you when a friend has actually written
 to you — and, on hover, who and what they said.
@@ -30,7 +30,7 @@ A notification badge is only useful if you can trust it. Instagram's cannot be
 trusted, because it counts a heart tapped on something you already sent the same
 as a friend asking you a question.
 
-So Notifly splits them, and says so in two places:
+So Glint splits them, and says so in two places:
 
 - **The dot burns full Instagram colour only when a real message is waiting.**
   If everything waiting is reactions and likes, it drains to grey. You can tell
@@ -54,20 +54,20 @@ For when you would rather not know.
 
 ## Install
 
-Download the `.dmg`, drag Notifly to Applications.
+Download the `.dmg`, drag Glint to Applications.
 
 The build is ad-hoc signed rather than notarised, so the first launch is
-blocked. **Right-click Notifly → Open → Open** — once only. Or:
+blocked. **Right-click Glint → Open → Open** — once only. Or:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/Notifly.app
+xattr -dr com.apple.quarantine /Applications/Glint.app
 ```
 
 ### Build it yourself
 
 ```sh
-./Scripts/build_app.sh              # ./Notifly.app
-./Scripts/make_dmg.sh               # dist/Notifly-<version>.dmg
+./Scripts/build_app.sh              # ./Glint.app
+./Scripts/make_dmg.sh               # dist/Glint-<version>.dmg
 UNIVERSAL=1 ./Scripts/make_dmg.sh   # arm64 + x86_64
 ```
 
@@ -77,7 +77,7 @@ a persistent data store, and the login would not survive a relaunch.
 ## First run
 
 Settings opens automatically. Sign in once, in-app. That session is an ordinary
-WebKit session stored under `~/Library/WebKit/com.grey31415.Notifly/`.
+WebKit session stored under `~/Library/WebKit/com.grey31415.Glint/`.
 
 - **Hover** the dot for the card. **Click** a row to open that conversation.
 - **Click** the dot to open your inbox; **option-click** to mark everything read.
@@ -91,14 +91,14 @@ WebKit session stored under `~/Library/WebKit/com.grey31415.Notifly/`.
 ### Reading Instagram
 
 Instagram has no public unread API, but its own web client calls
-`/api/v1/direct_v2/inbox/` and `/api/v1/news/inbox/`. Notifly keeps your
+`/api/v1/direct_v2/inbox/` and `/api/v1/news/inbox/`. Glint keeps your
 signed-in session loaded off-screen and issues the same requests *from inside
 that page*, so the cookies come along and the result is exactly what the site
 would show you. Nothing leaves the machine.
 
 The response shapes in `InstagramScript.swift` were verified against a live
-account rather than assumed — `NOTIFLY_PROBE=1` dumps the structure of both
-endpoints, and `NOTIFLY_DEBUG=1` logs every payload plus a survey of the live
+account rather than assumed — `GLINT_PROBE=1` dumps the structure of both
+endpoints, and `GLINT_DEBUG=1` logs every payload plus a survey of the live
 DOM. That harness exists because the previous version's WhatsApp support was
 written against guessed selectors and silently never worked.
 
@@ -125,6 +125,28 @@ underneath keeps working. Cursor position is polled rather than observed,
 because a window with `ignoresMouseEvents` stops receiving mouse-moved events,
 and that flag is on most of the time.
 
+### One surface, not two
+
+The dot and the menu are the same object. Rather than a dot that vanishes and a
+panel that appears, there is a single shape whose rectangle and corner radius
+interpolate between the two: the dot's own top and notch-side borders do not
+move at all, and its edges stretch into the menu's edges while the contents
+cross-fade inside it. `MorphMetrics` owns those two endpoints, so the view that
+draws the surface and the controller that hit-tests it derive the same rectangle
+from the same numbers.
+
+The surface is real Liquid Glass — `glassEffect(_:in:)` from SwiftUICore, tinted
+by the accent — on macOS 26, falling back to a material-and-tint approximation
+on 14 and 15. The dot's colour does not disappear when the menu opens; it spreads
+into the glass as a bloom anchored where the dot was, so the panel still reads as
+having grown out of it.
+
+The menu opens on the dot, stays while the cursor is anywhere on the surface, and
+closes the instant it is on neither. There is no dismissal timer, because none is
+needed: the surface grows *out of* the dot, so the pointer never crosses dead
+space to reach it. It closes against the menu's measured height rather than a
+reserved maximum, so dropping past its real bottom edge dismisses it immediately.
+
 ### The colour field
 
 The lit interior is a square canvas of soft radial blobs, one per brand colour,
@@ -148,7 +170,7 @@ something is actually waiting.
 ### Marking as read
 
 Instagram will not let anything be marked read from outside without opening the
-conversation, so this is a local watermark, not a read receipt: Notifly
+conversation, so this is a local watermark, not a read receipt: Glint
 remembers the count and shows only what arrives after. It is clamped to the real
 count, so reading the messages for real releases it — it cannot silently mute
 you forever. **Undo Mark as Read** brings hidden ones back.
@@ -158,8 +180,8 @@ you forever. **Undo Mark as Read** brings hidden ones back.
 ## Layout
 
 ```
-Sources/Notifly/
-  Core/        InstagramFeed (model), NotiflyModel (counts, watermarks), Preferences
+Sources/Glint/
+  Core/        InstagramFeed (model), GlintModel (counts, watermarks), Preferences
   Providers/   InstagramSource (session + polling), InstagramScript (the JS)
   App/         panel, notch geometry, cursor tracking, status item, windows
   UI/          dot, hover card, colour field, geometry, theme, settings

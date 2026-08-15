@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Notifly renders on and around the notch, which is black on every machine
+/// Glint renders on and around the notch, which is black on every machine
 /// regardless of appearance. The palette is deliberately dark-only — it is
 /// hardware-matching, not theme-following.
 enum Palette {
@@ -49,6 +49,10 @@ enum Motion {
     static let reveal = Animation.spring(response: 0.40, dampingFraction: 0.78)
     /// Hover card opening and closing.
     static let card = Animation.spring(response: 0.34, dampingFraction: 0.82)
+    /// The dot stretching into the menu. Slightly slower and better damped than
+    /// a normal pop, because the eye is following a shape change rather than a
+    /// thing appearing — overshoot here reads as wobble.
+    static let morph = Animation.spring(response: 0.38, dampingFraction: 0.86)
 }
 
 /// Deterministic colour per username, so a given friend always gets the same

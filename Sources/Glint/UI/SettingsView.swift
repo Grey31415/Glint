@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var model: NotiflyModel
+    @ObservedObject var model: GlintModel
     @ObservedObject var prefs: Preferences
 
     @State private var tick = Date()
@@ -25,7 +25,7 @@ struct SettingsView: View {
 // MARK: - Notifications
 
 private struct NotificationsTab: View {
-    @ObservedObject var model: NotiflyModel
+    @ObservedObject var model: GlintModel
     @ObservedObject var prefs: Preferences
     let tick: Date
 
@@ -95,7 +95,7 @@ private struct NotificationsTab: View {
 
 private struct KindRow: View {
     let kind: ActivityKind
-    @ObservedObject var model: NotiflyModel
+    @ObservedObject var model: GlintModel
     @ObservedObject var prefs: Preferences
 
     private var summary: KindSummary? {
@@ -227,7 +227,7 @@ private struct GeneralTab: View {
 
             Section("Privacy") {
                 Text("""
-                Notifly reads your own signed-in instagram.com session, in the background, \
+                Glint reads your own signed-in instagram.com session, in the background, \
                 on this machine. The same requests the website makes for itself. Nothing is \
                 sent anywhere else and nothing is stored beyond what WebKit keeps for the \
                 session.
@@ -237,8 +237,8 @@ private struct GeneralTab: View {
             }
 
             Section {
-                LabeledContent("Notifly", value: version)
-                Button("Quit Notifly") { NSApp.terminate(nil) }
+                LabeledContent("Glint", value: version)
+                Button("Quit Glint") { NSApp.terminate(nil) }
             }
         }
         .formStyle(.grouped)

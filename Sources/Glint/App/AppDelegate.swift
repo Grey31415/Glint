@@ -5,13 +5,13 @@ import Combine
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let preferences = Preferences()
 
-    private var model: NotiflyModel!
+    private var model: GlintModel!
     private var overlay: OverlayController!
     private var statusItem: StatusItemController!
     private var settings: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        model = NotiflyModel(preferences: preferences)
+        model = GlintModel(preferences: preferences)
 
         overlay = OverlayController(model: model, preferences: preferences)
         overlay.onOpenSettings = { [weak self] in self?.openSettings() }

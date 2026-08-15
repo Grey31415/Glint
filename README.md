@@ -70,7 +70,7 @@ normally.
 
 </details>
 
-Then sign in to Instagram once, inside the app, and you're done.
+Then sign in to Instagram once, close the window, and you're done.
 
 ## Using it
 

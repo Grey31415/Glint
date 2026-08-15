@@ -26,6 +26,7 @@ final class InstagramSource: ObservableObject {
     private var inFlight = false
     /// Set once a real instagram.com page has finished loading.
     private var hasLoadedPage = false
+    private var hasProbed = false
     private var running = false
 
     static let trackingURL = URL(string: "https://www.instagram.com/direct/inbox/")!
@@ -69,6 +70,62 @@ final class InstagramSource: ObservableObject {
 
     /// Full page reload — heavier than `refresh`, used when the session looks wedged.
     func reload() { load() }
+
+    /// `GLINT_PROBE=1` dumps the taxonomy of both endpoints: every distinct
+    /// notification type with one sample, so a new category can be classified
+    /// from what Instagram actually sends rather than from guesswork.
+    func probeTaxonomy() {
+        guard let webView else { return }
+        let js = #"""
+        const H = { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest' };
+        const out = { itemTypes: {}, storyTypes: {}, reelShareKeys: null };
+
+        const r = await fetch('/api/v1/direct_v2/inbox/?limit=40&thread_message_limit=3',
+                              { headers: H, credentials: 'include' });
+        if (r.ok) {
+          const j = await r.json();
+          for (const t of ((j.inbox && j.inbox.threads) || [])) {
+            for (const it of (t.items || [])) {
+              const ty = it.item_type || 'none';
+              if (!out.itemTypes[ty]) {
+                out.itemTypes[ty] = {
+                  n: 0,
+                  mine: !!it.is_sent_by_viewer,
+                  sample: String((it.text) || (it.action_log && it.action_log.description) || '').slice(0, 40),
+                  sub: it.reel_share ? Object.keys(it.reel_share).slice(0, 12)
+                     : (it.story_share ? Object.keys(it.story_share).slice(0, 12) : null),
+                  subType: (it.reel_share && it.reel_share.type) || null,
+                  reaction: !!(it.action_log && it.action_log.is_reaction_log)
+                };
+              }
+              out.itemTypes[ty].n++;
+            }
+          }
+        }
+
+        const r2 = await fetch('/api/v1/news/inbox/', { headers: H, credentials: 'include' });
+        if (r2.ok) {
+          const n = await r2.json();
+          for (const s of (n.new_stories || []).concat(n.old_stories || [])) {
+            const key = String(s.story_type) + '/' + String(s.notif_name || '?');
+            if (!out.storyTypes[key]) {
+              out.storyTypes[key] = {
+                n: 0,
+                sample: String((s.args && s.args.text) || '').slice(0, 55)
+              };
+            }
+            out.storyTypes[key].n++;
+          }
+        }
+        return JSON.stringify(out);
+        """#
+        webView.callAsyncJavaScript(js, arguments: [:], in: nil, in: .page) { result in
+            switch result {
+            case .success(let value): NSLog("[Glint:taxonomy] %@", (value as? String) ?? "nil")
+            case .failure(let error): NSLog("[Glint:taxonomy] FAILED %@", error.localizedDescription)
+            }
+        }
+    }
 
     // MARK: - Web view
 
@@ -227,9 +284,13 @@ final class InstagramSource: ObservableObject {
         state = .ready
         lastUpdate = Date()
         if Self.debugLogging {
-            NSLog("[Glint:parsed] threads=%d unreadMsg=%d unreadReact=%d activity=%d counts=%@",
+            let byKind = Dictionary(grouping: next.activity, by: \.kind)
+                .map { "\($0.key.rawValue):\($0.value.count)" }
+                .sorted()
+                .joined(separator: " ")
+            NSLog("[Glint:parsed] threads=%d unreadMsg=%d unreadReact=%d counts=%@ activity[%d] %@",
                   next.threads.count, next.unreadMessages.count, next.unreadReactions.count,
-                  next.activity.count, String(describing: next.activityCounts))
+                  String(describing: next.activityCounts), next.activity.count, byKind)
         }
         let unread = next.unreadMessages.count
         let reactions = next.unreadReactions.count
@@ -264,6 +325,10 @@ final class InstagramSource: ObservableObject {
         }
         interstitialBounces = 0
         hasLoadedPage = url.host?.contains("instagram.com") ?? false
+        if hasLoadedPage, ProcessInfo.processInfo.environment["GLINT_PROBE"] == "1", !hasProbed {
+            hasProbed = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.probeTaxonomy() }
+        }
         // Give the SPA a moment to settle before the first read.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.poll() }
     }

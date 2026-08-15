@@ -38,9 +38,18 @@ So Glint splits them, and says so in two places:
 - **The card lists the split explicitly** — "2 messages · 1 reaction" — and
   renders reactions dimmed and italic, so they never masquerade as a reply.
 
-Every other category — likes, comments, follows, tags, message requests — is off
-by default and individually switchable. Turn them on and they are added into the
-one number on the dot and listed separately in the card.
+Every other category is off by default and individually switchable. Turn one on
+and it is added into the single number on the dot, and listed separately in the
+menu:
+
+| | |
+| --- | --- |
+| Post likes | likes on your posts and comments |
+| Story likes | kept apart from post likes — they arrive constantly and mean less |
+| Comments | comments on your posts |
+| New followers | follows and follow requests |
+| Tags & mentions | you were tagged or mentioned |
+| Message requests | messages from people you don't follow |
 
 ## Hidden mode
 
@@ -106,6 +115,23 @@ account rather than assumed — `GLINT_PROBE=1` dumps the structure of both
 endpoints, and `GLINT_DEBUG=1` logs every payload plus a survey of the live
 DOM. That harness exists because the previous version's WhatsApp support was
 written against guessed selectors and silently never worked.
+
+### Sorting the activity feed
+
+`/api/v1/news/inbox/` tags every notification with a `notif_name` — `story_like`,
+`post_like`, `comment_like`, `user_followed`, `mentioned_comment` — which is an
+exact, locale-independent key, so that is what the classifier matches on, with
+the rendered text only as a fallback for names not seen before.
+
+Instagram's own `counts` object has no key for story likes at all: they are
+folded into `likes`. Separating them means tallying the unseen stories
+themselves, which has the side benefit that every number equals exactly the rows
+listed beneath it. When Instagram reports nothing new but is still badging a
+category, Glint falls back to its aggregates — the two branches are mutually
+exclusive, so nothing is counted twice.
+
+`GLINT_PROBE=1` dumps the full taxonomy of both endpoints, which is how the
+above was established rather than guessed.
 
 ### Telling a reaction from a message
 

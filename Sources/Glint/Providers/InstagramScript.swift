@@ -94,17 +94,32 @@ enum InstagramScript {
 
     // --- activity feed -------------------------------------------------------
 
-    // notif_name is locale-independent, so it is tried before the rendered
-    // text. Order matters: "liked your comment" contains both words.
+    // notif_name is an exact, locale-independent key — story_like, post_like,
+    // comment_like, user_followed, comment, mentioned_comment and so on — so it
+    // is matched first and the rendered text is only a fallback for names not
+    // seen before. Order matters throughout: "story_like" and "comment_like"
+    // both contain "like", and "mentioned_comment" contains "comment".
     function classifyStory(s) {
       const name = String(s.notif_name || '').toLowerCase();
+      if (name) {
+        if (name.indexOf('story_like') >= 0)   return 'storyLikes';
+        if (name.indexOf('mention') >= 0 ||
+            name.indexOf('tag') >= 0)          return 'tags';
+        if (name.indexOf('like') >= 0)         return 'likes';   // post_like, comment_like
+        if (name.indexOf('follow') >= 0)       return 'follows';
+        if (name.indexOf('comment') >= 0)      return 'comments';
+        if (name.indexOf('ig_approve') >= 0 ||
+            name.indexOf('login') >= 0)        return 'security';
+        if (name.indexOf('digest') >= 0 ||
+            name.indexOf('text_post_app') >= 0) return 'other';
+      }
       const text = String((s.args && s.args.text) || '').toLowerCase();
-      const probe = name + ' ' + text;
-      if (/follow/.test(probe))                     return 'follows';
-      if (/\blike[ds]?\b|liked/.test(probe))        return 'likes';
-      if (/comment/.test(probe))                    return 'comments';
-      if (/tagged|mention/.test(probe))             return 'tags';
-      if (/log ?in|password|security|suspicious/.test(probe)) return 'security';
+      if (/liked your story/.test(text))       return 'storyLikes';
+      if (/follow/.test(text))                 return 'follows';
+      if (/tagged|mentioned/.test(text))       return 'tags';
+      if (/\bliked\b/.test(text))              return 'likes';
+      if (/comment/.test(text))                return 'comments';
+      if (/log ?in|password|security/.test(text)) return 'security';
       return 'other';
     }
 
@@ -113,15 +128,35 @@ enum InstagramScript {
       if (r2.ok) {
         const n = await r2.json();
         const c = n.counts || {};
-        out.counts = {
-          likes:    (c.likes || 0) + (c.comment_likes || 0),
-          comments: (c.comments || 0),
-          follows:  (c.relationships || 0),
-          tags:     (c.usertags || 0) + (c.photos_of_you || 0),
-          requests: (c.requests || 0)
-        };
         const fresh = n.new_stories || [];
         const freshIDs = new Set(fresh.map(s => String(s.pk)));
+
+        // Tally the unseen stories by kind. Instagram's own `counts` object has
+        // no key for story likes at all, so the only way to separate them from
+        // post likes is to count the stories themselves — which also keeps each
+        // number exactly equal to the rows shown under it.
+        const tally = {};
+        for (const s of fresh) {
+          const k = classifyStory(s);
+          tally[k] = (tally[k] || 0) + 1;
+        }
+        out.counts = {
+          likes:      tally.likes || 0,
+          storyLikes: tally.storyLikes || 0,
+          comments:   tally.comments || 0,
+          follows:    tally.follows || 0,
+          tags:       tally.tags || 0,
+          requests:   c.requests || 0
+        };
+        // When Instagram reports nothing new but is still badging categories,
+        // fall back to its aggregates for the kinds it does expose. The two
+        // branches are mutually exclusive, so nothing is ever counted twice.
+        if (fresh.length === 0) {
+          out.counts.likes    = (c.likes || 0) + (c.comment_likes || 0);
+          out.counts.comments = c.comments || 0;
+          out.counts.follows  = c.relationships || 0;
+          out.counts.tags     = (c.usertags || 0) + (c.photos_of_you || 0);
+        }
         for (const s of fresh.concat(n.old_stories || []).slice(0, 40)) {
           const a = s.args || {};
           if (!a.text) continue;

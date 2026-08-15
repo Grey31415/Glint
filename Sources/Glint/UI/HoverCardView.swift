@@ -11,7 +11,7 @@ struct HoverCardView: View {
     @ObservedObject var prefs: Preferences
     let onOpenSettings: () -> Void
 
-    static let width: CGFloat = 316
+    static let width: CGFloat = 360
 
     private var threads: [DirectThread] { model.cardThreads() }
     private var showsMessages: Bool {
@@ -52,10 +52,10 @@ struct HoverCardView: View {
                             }
                         }
                     }
-                    .padding(.bottom, 6)
+                    .padding(.bottom, 7)
                 }
                 .scrollIndicators(.never)
-                .frame(maxHeight: 320)
+                .frame(maxHeight: 360)
                 .scrollBounceBehavior(.basedOnSize)
             }
         }
@@ -65,7 +65,7 @@ struct HoverCardView: View {
     }
 
     private var hairline: some View {
-        Rectangle().fill(Palette.hairline).frame(height: 0.5).padding(.vertical, 4)
+        Rectangle().fill(Palette.hairline).frame(height: 0.5).padding(.vertical, 5)
     }
 
     // MARK: - Header
@@ -73,9 +73,9 @@ struct HoverCardView: View {
     /// One line. The split matters — "3 waiting" must never hide the fact that
     /// all three are hearts on something you already sent.
     private var header: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 8) {
             Text(summaryLine)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(model.total > 0 ? Palette.textHi : Palette.textLo)
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -88,9 +88,9 @@ struct HoverCardView: View {
             }
             MiniButton(symbol: "gearshape", help: "Settings", action: onOpenSettings)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 9)
-        .padding(.bottom, 7)
+        .padding(.horizontal, 14)
+        .padding(.top, 11)
+        .padding(.bottom, 8)
     }
 
     private var summaryLine: String {
@@ -113,23 +113,23 @@ struct HoverCardView: View {
 
     private var allClear: some View {
         Text("You're all caught up.")
-            .font(.system(size: 11))
+            .font(.system(size: 12))
             .foregroundStyle(Palette.textLo)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 11)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 13)
     }
 
     private var signInPrompt: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Glint needs a signed-in Instagram session.")
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundStyle(Palette.textMid)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Sign in…") { model.source.presentLogin() }
                 .controlSize(.small)
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 11)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 13)
     }
 }
 
@@ -142,24 +142,32 @@ private struct ThreadRow: View {
 
     @State private var hovering = false
 
+    /// Width reserved for the unread marker. Read rows keep the same gutter so
+    /// usernames stay on one vertical line rather than shifting as threads are
+    /// read.
+    private let gutter: CGFloat = 8
+
     var body: some View {
         Button(action: onTap) {
             HStack(alignment: .top, spacing: 8) {
-                avatar
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 5) {
+                Circle()
+                    .fill(thread.isUnread ? Accent.instagram.glow : .clear)
+                    .frame(width: gutter, height: gutter)
+                    .padding(.top, 4)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
                         Text(thread.title)
-                            .font(.system(size: 11.5, weight: thread.isUnread ? .semibold : .regular))
+                            .font(.system(size: 12.5, weight: thread.isUnread ? .semibold : .regular))
                             .foregroundStyle(thread.isUnread ? Palette.textHi : Palette.textMid)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                         Text(RelativeTime.string(for: thread.date))
-                            .font(.system(size: 9.5).monospacedDigit())
+                            .font(.system(size: 10.5).monospacedDigit())
                             .foregroundStyle(Palette.textLo)
                     }
                     if showPreview, !thread.preview.isEmpty {
                         Text(thread.preview)
-                            .font(.system(size: 10.5))
+                            .font(.system(size: 11.5))
                             // A reaction is dimmed and italic: visibly not a
                             // message, before you even read the words.
                             .italic(thread.kind == .reaction)
@@ -168,33 +176,13 @@ private struct ThreadRow: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
             .background(hovering ? Color.white.opacity(0.10) : .clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-    }
-
-    private var avatar: some View {
-        ZStack {
-            Circle().fill(AvatarTint.color(for: thread.title).opacity(0.9))
-            Text(AvatarTint.initials(for: thread.title))
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-        }
-        .frame(width: 19, height: 19)
-        .overlay(alignment: .topTrailing) {
-            if thread.isUnread {
-                Circle()
-                    .fill(Accent.instagram.glow)
-                    .frame(width: 6, height: 6)
-                    .overlay(Circle().strokeBorder(.black.opacity(0.35), lineWidth: 1.2))
-                    .offset(x: 2, y: -2)
-            }
-        }
-        .padding(.top, 1)
     }
 }
 
@@ -215,21 +203,21 @@ private struct ActivityRow: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: summary.kind.symbol)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Accent.instagram.glow)
-                        .frame(width: 19)
-                    Text("\(summary.count) \(summary.kind.title.lowercased())")
                         .font(.system(size: 11))
+                        .foregroundStyle(Accent.instagram.glow)
+                        .frame(width: 16)
+                    Text("\(summary.count) \(summary.kind.title.lowercased())")
+                        .font(.system(size: 12))
                         .foregroundStyle(Palette.textMid)
                     Spacer(minLength: 0)
                     if !samples.isEmpty {
                         Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 7, weight: .bold))
+                            .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(hovering || expanded ? Palette.textLo : .clear)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
                 .background(hovering ? Color.white.opacity(0.10) : .clear)
                 .contentShape(Rectangle())
             }
@@ -237,10 +225,10 @@ private struct ActivityRow: View {
             .onHover { hovering = $0 }
 
             if expanded {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     ForEach(samples.prefix(4)) { item in
                         Text(item.text)
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(Palette.textLo)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -249,11 +237,11 @@ private struct ActivityRow: View {
                         Button("Open", action: onOpen).controlSize(.mini)
                         Button("Mark read", action: onMarkRead).controlSize(.mini)
                     }
-                    .padding(.top, 1)
+                    .padding(.top, 2)
                 }
-                .padding(.horizontal, 12)
-                .padding(.leading, 19)
-                .padding(.bottom, 6)
+                .padding(.horizontal, 14)
+                .padding(.leading, 24)
+                .padding(.bottom, 7)
             }
         }
     }
@@ -268,9 +256,9 @@ private struct MiniButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(hovering ? Palette.textHi : Palette.textLo)
-                .frame(width: 18, height: 16)
+                .frame(width: 20, height: 18)
                 .background(Capsule().fill(Color.white.opacity(hovering ? 0.12 : 0)))
         }
         .buttonStyle(.plain)

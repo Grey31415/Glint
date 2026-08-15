@@ -55,28 +55,3 @@ enum Motion {
     static let morph = Animation.spring(response: 0.38, dampingFraction: 0.86)
 }
 
-/// Deterministic colour per username, so a given friend always gets the same
-/// avatar tint and becomes recognisable at a glance.
-enum AvatarTint {
-    private static let palette: [Color] = [
-        Accent.hex(0xE8557A), Accent.hex(0xE8874F), Accent.hex(0xD8B23F),
-        Accent.hex(0x63B762), Accent.hex(0x46A9A0), Accent.hex(0x4E8FD6),
-        Accent.hex(0x7B6FE0), Accent.hex(0xB264D0), Accent.hex(0xD65FA0)
-    ]
-
-    static func color(for name: String) -> Color {
-        guard !name.isEmpty else { return palette[0] }
-        // FNV-1a: stable across launches, unlike hashValue.
-        var hash: UInt32 = 2_166_136_261
-        for byte in name.utf8 {
-            hash = (hash ^ UInt32(byte)) &* 16_777_619
-        }
-        return palette[Int(hash % UInt32(palette.count))]
-    }
-
-    static func initials(for name: String) -> String {
-        let cleaned = name.trimmingCharacters(in: .whitespaces)
-        guard let first = cleaned.first else { return "?" }
-        return String(first).uppercased()
-    }
-}

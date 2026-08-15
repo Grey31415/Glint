@@ -57,13 +57,10 @@ final class GlintModel: ObservableObject {
     var feed: InstagramFeed { source.feed }
 
     /// Threads the card should list: only ones still waiting on you. Anything
-    /// you have already replied to is gone, so the card stays a to-do list
-    /// rather than turning into a second inbox.
-    func cardThreads(limit: Int = 6) -> [DirectThread] {
-        let waiting = feed.threads.filter { $0.needsAttention() }
-        let unread = waiting.filter(\.isUnread)
-        let answered = waiting.filter { !$0.isUnread }
-        return Array((unread + answered).prefix(limit))
+    /// read or already answered is gone, so the card stays a to-do list rather
+    /// than turning into a second inbox.
+    func cardThreads(limit: Int = 8) -> [DirectThread] {
+        Array(feed.threads.filter(\.needsAttention).prefix(limit))
     }
 
     /// Buckets the user asked to be told about, in a stable display order.

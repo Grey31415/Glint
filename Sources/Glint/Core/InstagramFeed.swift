@@ -110,15 +110,16 @@ struct DirectThread: Identifiable, Equatable {
 
     /// Whether this belongs in the card at all.
     ///
-    /// The card is a list of things waiting on you, not a history. If the
-    /// newest entry is yours, you have already replied and the thread is done —
-    /// it disappears. Anything unread always stays; a message they sent that
-    /// you have read but not answered stays for a while, then ages out.
-    func needsAttention(now: Date = Date(), unansweredWindow: TimeInterval = 7 * 86_400) -> Bool {
-        if isMine { return false }
-        if isUnread { return true }
-        guard kind.isSubstantive else { return false }
-        return now.timeIntervalSince(date) < unansweredWindow
+    /// The card is a list of things waiting on you, not a history. Acknowledged
+    /// means *seen*: once a thread is read — anywhere, including on a phone —
+    /// it is done and disappears, as does anything you answered yourself.
+    ///
+    /// An earlier version also kept read-but-unanswered threads around for a
+    /// week. That was wrong: reading a message on your phone is exactly the
+    /// acknowledgement this is supposed to respect, and keeping those rows made
+    /// the card a second inbox rather than a to-do list.
+    var needsAttention: Bool {
+        isUnread && !isMine
     }
 }
 

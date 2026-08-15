@@ -75,7 +75,13 @@ enum InstagramScript {
           // Whose message the newest entry is. A reaction sits on *your*
           // message, so this is what separates "they replied" from "they
           // tapped a heart on something you said".
-          mine: !!(it && it.is_sent_by_viewer),
+          //
+          // Cross-checked against the thread's own viewer id, because
+          // is_sent_by_viewer is absent on some item shapes — notably entries
+          // that come back via last_permanent_item rather than items[0].
+          mine: !!(it && (it.is_sent_by_viewer ||
+                          (t.viewer_id !== undefined &&
+                           String(it.user_id) === String(t.viewer_id)))),
           group: (t.users || []).length > 1,
           muted: !!t.muted,
           // Instagram timestamps direct items in microseconds.

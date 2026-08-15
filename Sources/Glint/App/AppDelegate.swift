@@ -35,6 +35,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Launching Glint again — from Spotlight, Finder or the Dock — opens
+    /// Settings rather than doing nothing.
+    ///
+    /// This is the way back in when both the menu bar item and the dot are
+    /// switched off, which is exactly the configuration hidden mode is for.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        openSettings()
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         overlay?.stop()
         model?.stop()

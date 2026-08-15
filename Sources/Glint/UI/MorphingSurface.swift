@@ -21,12 +21,16 @@ struct MorphingSurface<DotContent: View, MenuContent: View>: View {
     @ViewBuilder let dotContent: () -> DotContent
     @ViewBuilder let menuContent: () -> MenuContent
 
-    /// Both the dot and the menu contents are pinned to the anchored edge, so
-    /// nothing inside the surface travels either — only the surface's far edge
-    /// sweeps out and back.
-    private func pinnedOffset(contentWidth: CGFloat) -> CGFloat {
-        side == .left ? rect.width - contentWidth : 0
-    }
+    /// Contents are pinned to the anchored edge by *alignment*, not by computed
+    /// offsets.
+    ///
+    /// Offsetting worked out to `rect.minX + (rect.width - contentWidth)`, which
+    /// is only stationary while both terms ease on the same curve. Closing
+    /// changes the morph and the magnification together, SwiftUI animates them
+    /// on their own curves, the cancellation breaks, and the dot visibly flies
+    /// across the menu. Letting the layout system pin the edge removes the
+    /// arithmetic, and with it the failure mode.
+    private var pin: Alignment { side == .left ? .topTrailing : .topLeading }
 
     private var rect: CGRect { MorphMetrics.rect(closed: closed, open: open, t: t) }
     private var radius: CGFloat { MorphMetrics.radius(closed: closed, current: rect, t: t) }
@@ -43,20 +47,18 @@ struct MorphingSurface<DotContent: View, MenuContent: View>: View {
     private var menuOpacity: Double { Double(max(0, (t - 0.45) / 0.55)) }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: pin) {
             bloom
             menuContent()
                 .frame(width: open.width, alignment: .topLeading)
-                .offset(x: pinnedOffset(contentWidth: open.width))
                 .opacity(menuOpacity)
                 .allowsHitTesting(t > 0.9)
             dotContent()
                 .frame(width: closed.width, height: closed.height)
-                .offset(x: pinnedOffset(contentWidth: closed.width))
                 .opacity(dotOpacity)
                 .allowsHitTesting(false)
         }
-        .frame(width: rect.width, height: rect.height, alignment: .topLeading)
+        .frame(width: rect.width, height: rect.height, alignment: pin)
         .liquidGlass(shape: shape, tint: accent.glow.opacity(0.20 * Double(t)), enabled: t > 0.02)
         .clipShape(shape)
         .overlay(
@@ -73,14 +75,17 @@ struct MorphingSurface<DotContent: View, MenuContent: View>: View {
         .offset(x: rect.minX, y: rect.minY)
     }
 
+    /// Sits in a dot-sized box pinned to the same edge, with the colour
+    /// overflowing symmetrically out of it — so it stays centred on where the
+    /// dot is without any position arithmetic of its own.
     private var bloom: some View {
-        AuroraFill(accent: accent, side: bloomSide)
-            .mask(MistyMask(side: bloomSide))
-            .frame(width: bloomSide, height: bloomSide)
-            // Anchored on the dot's own centre, so as the surface grows the
-            // colour stays where the dot was instead of sliding with it.
-            .position(x: pinnedOffset(contentWidth: closed.width) + closed.width / 2,
-                      y: closed.height / 2)
+        Color.clear
+            .frame(width: closed.width, height: closed.height)
+            .overlay(
+                AuroraFill(accent: accent, side: bloomSide)
+                    .mask(MistyMask(side: bloomSide))
+                    .frame(width: bloomSide, height: bloomSide)
+            )
             .opacity(1 - 0.25 * Double(t))
             .allowsHitTesting(false)
     }

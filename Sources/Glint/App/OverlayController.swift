@@ -39,14 +39,20 @@ final class OverlayController: ObservableObject {
     var onOpenSettings: (() -> Void)?
     var onQuit: (() -> Void)?
 
-    /// Slack around the dot so its glow is never clipped.
-    private let edgeMargin: CGFloat = 16
+    /// Slack around the surface inside the panel.
+    ///
+    /// Has to clear the drop shadow, not just the glow: SwiftUI's shadow blur
+    /// reaches roughly 1.5x its radius, and at 16pt the menu's shadow was being
+    /// cut off square by the panel bounds — a hard vertical edge down its left
+    /// side.
+    private let edgeMargin: CGFloat = 40
     /// Vertical room reserved for the card.
     private let cardMaxHeight: CGFloat = 460
 
     private var panel: OverlayPanel?
     private var bag = Set<AnyCancellable>()
     private var geometry: NotchGeometry?
+    private var parkWork: DispatchWorkItem?
     /// Measured height of the menu contents; the morph interpolates towards it.
     private(set) var measuredCardHeight: CGFloat = 0
 
@@ -224,21 +230,6 @@ final class OverlayController: ObservableObject {
         let inStrip = point.map { $0.y > panel.frame.maxY - geo.menuBarHeight - 24 } ?? false
         let live = withinLiveRegion(point)
 
-        // Hidden mode: the notch is the reveal trigger. Stay revealed while the
-        // cursor is still somewhere on the dot or the card.
-        if preferences.hiddenMode {
-            let reveal = inNotch || ((isRevealed || isCardOpen) && live)
-            if reveal != isRevealed {
-                withAnimation(Motion.reveal) { isRevealed = reveal }
-                // Moving the dot changes every measurement above, so restart
-                // rather than acting on stale numbers.
-                reposition()
-                return
-            }
-        } else if isRevealed {
-            isRevealed = false
-        }
-
         // Proximity magnification.
         let visible = !preferences.hiddenMode || isRevealed
         let newProgress: CGFloat = (visible && inStrip)
@@ -249,20 +240,61 @@ final class OverlayController: ObservableObject {
             scale = 1 + (CGFloat(preferences.maxScale) - 1) * newProgress
         }
 
-        // Open on the dot, stay open anywhere on the card, close the instant
+        // Open on the dot, stay open anywhere on the surface, close the instant
         // the cursor is on neither. There is no timer here: the dot's hover
-        // region and the card's top edge overlap, so the pointer never crosses
+        // region and the menu's top edge overlap, so the pointer never crosses
         // dead space on its way between them.
+        //
+        // Opening requires the *dot* specifically, not merely the live region.
+        // In hidden mode the live region includes the notch, and opening from
+        // there would unfold the menu while it was still parked behind the
+        // camera housing — which is what made it appear half-eaten by the notch.
         let overDot = visible && inStrip && distance < max(22, layout.dotSize * scale)
-        let shouldOpen = preferences.showHoverCard && isDotVisible && (overDot || live)
+        let shouldOpen = preferences.showHoverCard && isDotVisible
+            && (overDot || (isCardOpen && live))
         if shouldOpen != isCardOpen {
             frozenOpen = shouldOpen ? currentOpenRect() : nil
             withAnimation(Motion.card) { isCardOpen = shouldOpen }
             updateInterestRect()
         }
 
+        // Hidden mode reveal, handled *after* the menu.
+        //
+        // The dot must not travel back under the notch while the menu is still
+        // on screen, so the reveal is held for as long as the menu is open and
+        // parking is deferred past the closing animation. The menu itself still
+        // dismisses immediately; only the dot's journey home waits.
+        if preferences.hiddenMode {
+            let wantReveal = inNotch || isCardOpen || (isRevealed && live)
+            if wantReveal != isRevealed {
+                if wantReveal {
+                    parkWork?.cancel()
+                    parkWork = nil
+                    withAnimation(Motion.reveal) { isRevealed = true }
+                    reposition()
+                } else {
+                    schedulePark()
+                }
+            }
+        } else if isRevealed {
+            isRevealed = false
+            reposition()
+        }
+
         updateMouseEvents(point: point, overDot: overDot)
+
+        if Self.traceMorph {
+            let c = closedRect
+            let o = frozenOpen ?? currentOpenRect()
+            NSLog("[Glint:morph] open=%@ anchor=%.1f prog=%.2f scale=%.2f closed=(%.1f,%.1f,%.1f,%.1f) openR=(%.1f,%.1f,%.1f,%.1f) frozen=%@",
+                  isCardOpen ? "Y" : "n", layout.anchorX, progress, scale,
+                  c.minX, c.minY, c.width, c.height,
+                  o.minX, o.minY, o.width, o.height,
+                  frozenOpen == nil ? "nil" : "set")
+        }
     }
+
+    static let traceMorph = ProcessInfo.processInfo.environment["GLINT_TRACE_MORPH"] == "1"
 
     /// The menu's measured height, reported by the view. Using the real height
     /// rather than a reserved maximum is what lets the surface close the moment
@@ -283,6 +315,19 @@ final class OverlayController: ObservableObject {
                                 showCount: preferences.showCountAtRest,
                                 progress: progress,
                                 scale: scale)
+    }
+
+    /// Slides the dot back behind the notch once the menu has finished closing.
+    private func schedulePark() {
+        parkWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.preferences.hiddenMode, self.isRevealed else { return }
+            guard !self.isCardOpen, !self.withinLiveRegion(self.tracker.location) else { return }
+            withAnimation(Motion.reveal) { self.isRevealed = false }
+            self.reposition()
+        }
+        parkWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32, execute: work)
     }
 
     /// The menu rectangle as it would be right now, before freezing.

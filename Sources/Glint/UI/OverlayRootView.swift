@@ -108,7 +108,7 @@ struct OverlayRootView: View {
     /// the first morph would have nothing to interpolate towards. An invisible
     /// copy is laid out continuously and reports its height.
     private var measuringCopy: some View {
-        HoverCardView(model: model, prefs: prefs, onOpenSettings: {})
+        HoverCardView(model: model, prefs: prefs, onOpenSettings: {}, measuring: true)
             .fixedSize(horizontal: false, vertical: true)
             .background(
                 GeometryReader { proxy in

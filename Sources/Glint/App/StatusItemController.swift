@@ -38,18 +38,12 @@ final class StatusItemController {
         teardown()
     }
 
-    /// True when nothing is drawn beside the notch — hidden mode, or the dot
-    /// suppressed while empty.
-    private var dotIsInvisible: Bool {
-        if preferences.hiddenMode { return true }
-        return preferences.hideWhenEmpty && model.total == 0
-    }
-
     private func sync() {
-        // The status item can be switched off, but not into a corner: with no
-        // dot on screen and no menu bar item there would be no way left to
-        // reach Settings or Quit.
-        guard preferences.showStatusItem || dotIsInvisible else { return teardown() }
+        // Strictly the user's choice. An earlier version forced the item back
+        // whenever the dot was invisible, which defeated hidden mode entirely —
+        // the whole point is that nothing shows. Launching Glint from Spotlight
+        // reopens Settings, so switching this off is never a dead end.
+        guard preferences.showStatusItem else { return teardown() }
 
         let item = self.item ?? {
             let new = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

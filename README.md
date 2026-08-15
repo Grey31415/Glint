@@ -46,9 +46,14 @@ one number on the dot and listed separately in the card.
 
 The notch is a hole in the display: a region with no pixels. Hidden mode parks
 the dot *inside* it, so it is genuinely invisible rather than merely small. Move
-the cursor into the notch and it slides out.
+the cursor into the notch and it slides out; hover the dot itself to open the
+menu.
 
 For when you would rather not know.
+
+Pair it with **General → Show menu bar item → off** and Glint leaves no trace on
+screen at all. That is not a dead end: launching Glint from Spotlight reopens
+Settings, so there is always a way back in.
 
 ---
 

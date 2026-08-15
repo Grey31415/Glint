@@ -10,8 +10,17 @@ struct HoverCardView: View {
     @ObservedObject var model: GlintModel
     @ObservedObject var prefs: Preferences
     let onOpenSettings: () -> Void
+    /// When true the rows are laid out without a ScrollView.
+    ///
+    /// A ScrollView's ideal height along its scroll axis is minimal, so the
+    /// invisible copy used to size the morph reported ~65pt however much was in
+    /// it, and the menu opened far too short. Measuring the rows directly and
+    /// clamping with the same maximum gives the height the real card will take.
+    var measuring: Bool = false
 
     static let width: CGFloat = 360
+    /// Tallest the rows area is allowed to get before it scrolls.
+    static let maxRowsHeight: CGFloat = 360
 
     private var threads: [DirectThread] { model.cardThreads() }
     private var showsMessages: Bool {
@@ -31,37 +40,41 @@ struct HoverCardView: View {
                 signInPrompt
             } else if isEmpty {
                 allClear
+            } else if measuring {
+                rows.frame(maxHeight: Self.maxRowsHeight)
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        if showsMessages {
-                            ForEach(threads) { thread in
-                                ThreadRow(thread: thread,
-                                          showPreview: prefs.showMessagePreviews) {
-                                    model.open(thread)
-                                }
-                            }
-                        }
-                        if !activityRows.isEmpty {
-                            if showsMessages && !threads.isEmpty { hairline }
-                            ForEach(activityRows) { summary in
-                                ActivityRow(summary: summary,
-                                            samples: model.feed.items(for: summary.kind),
-                                            onOpen: { model.open(summary.kind) },
-                                            onMarkRead: { model.markRead(summary.kind) })
-                            }
-                        }
-                    }
-                    .padding(.bottom, 7)
-                }
-                .scrollIndicators(.never)
-                .frame(maxHeight: 360)
-                .scrollBounceBehavior(.basedOnSize)
+                ScrollView { rows }
+                    .scrollIndicators(.never)
+                    .frame(maxHeight: Self.maxRowsHeight)
+                    .scrollBounceBehavior(.basedOnSize)
             }
         }
         .frame(width: Self.width, alignment: .leading)
         // No background, border or shadow here: this is the *contents* of the
         // morphing surface, which supplies the glass and the shape.
+    }
+
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if showsMessages {
+                ForEach(threads) { thread in
+                    ThreadRow(thread: thread,
+                              showPreview: prefs.showMessagePreviews) {
+                        model.open(thread)
+                    }
+                }
+            }
+            if !activityRows.isEmpty {
+                if showsMessages && !threads.isEmpty { hairline }
+                ForEach(activityRows) { summary in
+                    ActivityRow(summary: summary,
+                                samples: model.feed.items(for: summary.kind),
+                                onOpen: { model.open(summary.kind) },
+                                onMarkRead: { model.markRead(summary.kind) })
+                }
+            }
+        }
+        .padding(.bottom, 7)
     }
 
     private var hairline: some View {

@@ -6,7 +6,7 @@
   <img src="Assets/glint_black.png" alt="Glint" width="190">
 </picture>
 
-**Know a friend messaged you, without opening Instagram.**
+**Stay in the loop without getting lost**
 
 </div>
 

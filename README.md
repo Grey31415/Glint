@@ -91,6 +91,8 @@ xattr -dr com.apple.quarantine /Applications/Glint.app
 ### Build it yourself
 
 ```sh
+git clone https://github.com/Grey31415/Glint.git
+cd Glint
 ./Scripts/build_app.sh              # ./Glint.app
 ./Scripts/make_dmg.sh               # dist/Glint-<version>.dmg
 UNIVERSAL=1 ./Scripts/make_dmg.sh   # arm64 + x86_64

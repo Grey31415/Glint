@@ -2,19 +2,28 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-// Builds Glint.icns from the transparent orb.
+// Builds an .iconset from a source image.
 //
-// The source is not square and macOS icons are, so each size is drawn onto a
-// square transparent canvas, scaled to fit with a small margin. Done in
-// CoreGraphics rather than sips because sips cannot pad with transparency.
+//   swift Scripts/make_icon.swift <source.png> <out.iconset> [--freeform]
+//
+// Default is the macOS app-icon treatment: the artwork fills a rounded square
+// inset from the canvas, matching the proportions Apple uses (an 824pt body on
+// a 1024pt grid, corner radius 185.4). Artwork that already carries its own
+// silhouette — a cut-out with transparency — wants `--freeform` instead, which
+// scales it to fit and leaves the surround clear.
+//
+// Done in CoreGraphics rather than sips because sips cannot pad with alpha and
+// cannot mask corners.
 
 let args = CommandLine.arguments
 guard args.count >= 3 else {
-    FileHandle.standardError.write("usage: make_icon.swift <source.png> <out.iconset>\n".data(using: .utf8)!)
+    FileHandle.standardError.write(
+        "usage: make_icon.swift <source.png> <out.iconset> [--freeform]\n".data(using: .utf8)!)
     exit(2)
 }
 let sourceURL = URL(fileURLWithPath: args[1])
 let outDir = URL(fileURLWithPath: args[2])
+let freeform = args.contains("--freeform")
 
 guard let data = try? Data(contentsOf: sourceURL),
       let src = NSBitmapImageRep(data: data)?.cgImage else {
@@ -24,9 +33,11 @@ guard let data = try? Data(contentsOf: sourceURL),
 
 try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
-/// Fraction of the canvas the artwork occupies. The orb already carries its own
-/// glow, so it needs less inset than a flat mark would.
-let fill: CGFloat = 0.94
+/// Apple's macOS icon grid: body 824 of 1024, corner radius 185.4 of that body.
+let bodyFraction: CGFloat = 824.0 / 1024.0
+let radiusFraction: CGFloat = 185.4 / 824.0
+/// Free-form marks carry their own glow, so they need very little margin.
+let freeformFill: CGFloat = 0.94
 
 func render(size: Int) -> CGImage? {
     let s = CGFloat(size)
@@ -38,9 +49,30 @@ func render(size: Int) -> CGImage? {
     ctx.clear(CGRect(x: 0, y: 0, width: s, height: s))
 
     let sw = CGFloat(src.width), sh = CGFloat(src.height)
-    let scale = min(s * fill / sw, s * fill / sh)
+
+    if freeform {
+        let scale = min(s * freeformFill / sw, s * freeformFill / sh)
+        let w = sw * scale, h = sh * scale
+        ctx.draw(src, in: CGRect(x: (s - w) / 2, y: (s - h) / 2, width: w, height: h))
+        return ctx.makeImage()
+    }
+
+    // Rounded-square body, with the artwork aspect-*filled* so an opaque
+    // background reaches every corner instead of leaving slivers.
+    let body = (s * bodyFraction).rounded()
+    let origin = ((s - body) / 2).rounded()
+    let bodyRect = CGRect(x: origin, y: origin, width: body, height: body)
+    let radius = body * radiusFraction
+
+    ctx.saveGState()
+    ctx.addPath(CGPath(roundedRect: bodyRect, cornerWidth: radius, cornerHeight: radius, transform: nil))
+    ctx.clip()
+
+    let scale = max(body / sw, body / sh)
     let w = sw * scale, h = sh * scale
-    ctx.draw(src, in: CGRect(x: (s - w) / 2, y: (s - h) / 2, width: w, height: h))
+    ctx.draw(src, in: CGRect(x: bodyRect.midX - w / 2, y: bodyRect.midY - h / 2, width: w, height: h))
+    ctx.restoreGState()
+
     return ctx.makeImage()
 }
 
@@ -61,4 +93,4 @@ for v in variants {
     }
     try? png.write(to: outDir.appendingPathComponent("\(v.name).png"))
 }
-print("wrote \(variants.count) sizes to \(outDir.lastPathComponent)")
+print("wrote \(variants.count) sizes to \(outDir.lastPathComponent) (\(freeform ? "freeform" : "rounded square"))")

@@ -1,6 +1,6 @@
 # Glint, for nerds
 
-The bits the [main README](README.md) deliberately leaves out.
+The tasty tidbits for the nerds ;)
 
 ## Build
 

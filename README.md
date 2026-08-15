@@ -60,8 +60,9 @@ opened read-only.
 
 ## Using it
 
-- **Click** a dot to open that service in the browser. If it is blocked on
-  something — signed out, missing a permission — clicking runs the fix instead.
+- **Click** a dot to open that service — its Mac app if one is installed,
+  otherwise the web version. If it is blocked on something — signed out, missing
+  a permission — clicking runs the fix instead.
 - **Option-click** to mark that service as read.
 - **Right-click** for status, mark-as-read, refresh, settings, quit.
 - The menu bar item does the same. It can be switched off, but it reappears by
@@ -176,8 +177,10 @@ static let telegram = WebRecipe(
                                  // colours are blended as drifting blobs; base
                                  // fills the gaps, glow is the outer bloom
                                  accent: Accent(colors: [...], base: ..., glow: ...),
+                                 // clicking prefers the app, falling back to
+                                 // the URL; use nil to always open the browser
                                  openURL: URL(string: "https://web.telegram.org/"),
-                                 openBundleID: nil),   // nil = open in browser
+                                 openBundleID: "ru.keepcoder.Telegram"),
     trackingURL: URL(string: "https://web.telegram.org/a/")!,
     loginURL: URL(string: "https://web.telegram.org/a/")!,
     defaultExtractor: telegramExtractor)

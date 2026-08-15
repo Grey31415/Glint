@@ -1,7 +1,5 @@
 # Glint, for nerds
 
-The tasty tidbits for the nerds ;)
-
 ## Build
 
 ```sh

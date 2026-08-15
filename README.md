@@ -39,8 +39,8 @@ Made for people who deleted the app but still want to hear from their friends.
 Instagram treats a heart on something you posted the same as a friend asking you
 a question. Glint keeps them apart, so the number always means something.
 
-You can also switch on likes, story likes, comments, new followers, tags and
-message requests — each one separately, and all off to begin with.
+You can also switch on likes, comments, new followers, tags and message
+requests — each one separately, and all off to begin with.
 
 ## Installing
 

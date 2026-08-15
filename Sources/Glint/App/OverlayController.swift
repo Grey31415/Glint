@@ -212,10 +212,13 @@ final class OverlayController: ObservableObject {
 
         // While the card is open the whole card counts, so moving the cursor
         // into it does not dismiss the thing you are reaching for.
+        // Reach below the strip by at least the influence radius, or a large
+        // sensitivity would ask about a region the tracker never samples.
+        let reach = max(40, magnifyInfluence)
         var rect = CGRect(x: triggerMinX,
-                          y: panel.frame.maxY - geo.menuBarHeight - 40,
+                          y: panel.frame.maxY - geo.menuBarHeight - reach,
                           width: triggerMaxX - triggerMinX,
-                          height: geo.menuBarHeight + 40)
+                          height: geo.menuBarHeight + reach)
         if isCardOpen {
             // Track the surface at full size, so the cursor is still being
             // sampled anywhere over the open menu.
@@ -232,17 +235,24 @@ final class OverlayController: ObservableObject {
     // MARK: - Cursor
 
     private func cursorMoved(to point: CGPoint?) {
-        guard let panel, let geo = geometry else { return }
+        guard panel != nil, let geo = geometry else { return }
 
         let inNotch = point.map { geo.notchRect.insetBy(dx: -6, dy: -6).contains($0) } ?? false
-        let dotScreenX = panel.frame.minX + layout.dotCenterX
-        let distance = point.map { abs($0.x - dotScreenX) } ?? .greatestFiniteMagnitude
-        let inStrip = point.map { $0.y > panel.frame.maxY - geo.menuBarHeight - 24 } ?? false
         let live = withinLiveRegion(point)
+
+        // Distance from the dot's *rectangle*, in both axes at once — zero while
+        // the cursor is over it.
+        //
+        // This used to be `abs(point.x - dotCentre)` with a fixed vertical band,
+        // which meant the sensitivity setting only ever widened the reach
+        // sideways: approaching from below crossed a hard edge no matter what it
+        // was set to.
+        let distance = point.map { proximity(from: $0, to: screenRect(closedRect)) }
+            ?? .greatestFiniteMagnitude
 
         // Proximity magnification.
         let visible = !preferences.hiddenMode || isRevealed
-        let newProgress: CGFloat = (visible && inStrip)
+        let newProgress: CGFloat = visible
             ? DotGeometry.falloff(distance: distance, radius: magnifyInfluence)
             : 0
         if abs(newProgress - progress) > 0.001 {
@@ -259,8 +269,7 @@ final class OverlayController: ObservableObject {
         // In hidden mode the live region includes the notch, and opening from
         // there would unfold the menu while it was still parked behind the
         // camera housing — which is what made it appear half-eaten by the notch.
-        let overDot = visible && inStrip
-            && distance < max(CGFloat(preferences.hoverSensitivity), closedRect.width / 2)
+        let overDot = visible && distance <= CGFloat(preferences.hoverSensitivity)
         let shouldOpen = preferences.showHoverCard && isDotVisible
             && (overDot || (isCardOpen && live))
         if shouldOpen != isCardOpen {
@@ -297,8 +306,8 @@ final class OverlayController: ObservableObject {
         if Self.traceMorph {
             let c = closedRect
             let o = frozenOpen ?? currentOpenRect()
-            NSLog("[Glint:morph] open=%@ anchor=%.1f prog=%.2f scale=%.2f closed=(%.1f,%.1f,%.1f,%.1f) openR=(%.1f,%.1f,%.1f,%.1f) frozen=%@",
-                  isCardOpen ? "Y" : "n", layout.anchorX, progress, scale,
+            NSLog("[Glint:morph] open=%@ dist=%.1f anchor=%.1f prog=%.2f scale=%.2f closed=(%.1f,%.1f,%.1f,%.1f) openR=(%.1f,%.1f,%.1f,%.1f) frozen=%@",
+                  isCardOpen ? "Y" : "n", distance, layout.anchorX, progress, scale,
                   c.minX, c.minY, c.width, c.height,
                   o.minX, o.minY, o.width, o.height,
                   frozenOpen == nil ? "nil" : "set")
@@ -326,6 +335,25 @@ final class OverlayController: ObservableObject {
                                 showCount: preferences.showCountAtRest,
                                 progress: progress,
                                 scale: scale)
+    }
+
+    /// Panel-local rect to screen coordinates.
+    private func screenRect(_ local: CGRect) -> CGRect {
+        guard let panel else { return .null }
+        return CGRect(x: panel.frame.minX + local.minX,
+                      y: panel.frame.maxY - local.maxY,
+                      width: local.width,
+                      height: local.height)
+    }
+
+    /// Shortest distance from a point to a rectangle; zero when inside it.
+    /// Measuring to the rect rather than to its centre means the setting reads
+    /// the same however wide the dot has grown.
+    private func proximity(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        guard !rect.isNull else { return .greatestFiniteMagnitude }
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return hypot(dx, dy)
     }
 
     /// Slides the dot back behind the notch once the menu has finished closing.

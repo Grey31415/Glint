@@ -94,15 +94,20 @@ enum InstagramScript {
 
     // --- activity feed -------------------------------------------------------
 
-    // notif_name is an exact, locale-independent key — story_like, post_like,
-    // comment_like, user_followed, comment, mentioned_comment and so on — so it
-    // is matched first and the rendered text is only a fallback for names not
-    // seen before. Order matters throughout: "story_like" and "comment_like"
-    // both contain "like", and "mentioned_comment" contains "comment".
+    // notif_name is an exact, locale-independent key — post_like, comment_like,
+    // user_followed, comment, mentioned_comment and so on — so it is matched
+    // first and the rendered text is only a fallback for names not seen before.
+    // Order matters throughout: "comment_like" contains "comment", and
+    // "mentioned_comment" contains both.
+    //
+    // Story likes are deliberately dropped into 'other' rather than counted.
+    // They arrive constantly and mean little, and Instagram exposes no count
+    // for them, so the number could never be made to agree with what the app
+    // showed.
     function classifyStory(s) {
       const name = String(s.notif_name || '').toLowerCase();
       if (name) {
-        if (name.indexOf('story_like') >= 0)   return 'storyLikes';
+        if (name.indexOf('story_like') >= 0)   return 'other';
         if (name.indexOf('mention') >= 0 ||
             name.indexOf('tag') >= 0)          return 'tags';
         if (name.indexOf('like') >= 0)         return 'likes';   // post_like, comment_like
@@ -114,7 +119,7 @@ enum InstagramScript {
             name.indexOf('text_post_app') >= 0) return 'other';
       }
       const text = String((s.args && s.args.text) || '').toLowerCase();
-      if (/liked your story/.test(text))       return 'storyLikes';
+      if (/liked your story/.test(text))       return 'other';
       if (/follow/.test(text))                 return 'follows';
       if (/tagged|mentioned/.test(text))       return 'tags';
       if (/\bliked\b/.test(text))              return 'likes';
@@ -131,10 +136,8 @@ enum InstagramScript {
         const fresh = n.new_stories || [];
         const freshIDs = new Set(fresh.map(s => String(s.pk)));
 
-        // Tally the unseen stories by kind. Instagram's own `counts` object has
-        // no key for story likes at all, so the only way to separate them from
-        // post likes is to count the stories themselves — which also keeps each
-        // number exactly equal to the rows shown under it.
+        // Tally the unseen stories by kind, so each number equals exactly the
+        // rows shown under it.
         const tally = {};
         for (const s of fresh) {
           const k = classifyStory(s);
@@ -142,7 +145,6 @@ enum InstagramScript {
         }
         out.counts = {
           likes:      tally.likes || 0,
-          storyLikes: tally.storyLikes || 0,
           comments:   tally.comments || 0,
           follows:    tally.follows || 0,
           tags:       tally.tags || 0,

@@ -64,22 +64,27 @@ Every notification carries a `notif_name`: an exact, locale-independent key.
 
 | `notif_name` | bucket |
 | --- | --- |
-| `story_like` | story likes |
-| `post_like`, `comment_like` | post likes |
+| `post_like`, `comment_like` | likes |
 | `user_followed` | followers |
 | `comment` | comments |
 | `mentioned_comment` | tags & mentions |
 | `ig_approve_from_another_device` | security (ignored) |
 
-Order matters when matching: `story_like` and `comment_like` both contain
-"like", and `mentioned_comment` contains "comment". Rendered text is only a
-fallback for names not seen before.
+Order matters when matching: `comment_like` contains "comment", and
+`mentioned_comment` contains both. Rendered text is only a fallback for names not
+seen before.
 
-Instagram's own `counts` object has **no key for story likes** — they are folded
-into `likes`. Separating them means tallying the unseen stories themselves,
-which also makes every number equal exactly the rows listed beneath it. When
-Instagram reports nothing new but is still badging a category, Glint falls back
-to its aggregates; the branches are mutually exclusive, so nothing double counts.
+`story_like` is deliberately mapped to `other` and never counted. It was briefly
+its own category, but Instagram's `counts` object exposes no key for it — the
+number had to be derived from the unseen story list alone, which disagreed with
+the aggregates in the other direction and could not be made to add up. Story
+likes arrive constantly and mean little, so dropping them beats reporting them
+wrongly.
+
+Counts are tallied from the unseen stories, so each equals exactly the rows
+listed beneath it. When Instagram reports nothing new but is still badging a
+category, Glint falls back to its aggregates; the branches are mutually
+exclusive, so nothing double counts.
 
 ### Marking as read
 

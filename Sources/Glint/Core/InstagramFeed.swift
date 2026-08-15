@@ -10,7 +10,6 @@ enum ActivityKind: String, CaseIterable, Identifiable, Codable {
     case messages
     case reactions
     case likes
-    case storyLikes
     case comments
     case follows
     case tags
@@ -22,8 +21,7 @@ enum ActivityKind: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .messages:  return "Messages"
         case .reactions: return "Reactions"
-        case .likes:     return "Post likes"
-        case .storyLikes: return "Story likes"
+        case .likes:     return "Likes"
         case .comments:  return "Comments"
         case .follows:   return "New followers"
         case .tags:      return "Tags & mentions"
@@ -36,7 +34,6 @@ enum ActivityKind: String, CaseIterable, Identifiable, Codable {
         case .messages:  return "Someone actually wrote to you."
         case .reactions: return "Someone reacted to a message you sent."
         case .likes:     return "Likes on your posts and comments."
-        case .storyLikes: return "Someone liked your story."
         case .comments:  return "Comments on your posts."
         case .follows:   return "New followers and follow requests."
         case .tags:      return "You were tagged or mentioned."
@@ -49,7 +46,6 @@ enum ActivityKind: String, CaseIterable, Identifiable, Codable {
         case .messages:  return "bubble.left.fill"
         case .reactions: return "heart.text.square.fill"
         case .likes:     return "heart.fill"
-        case .storyLikes: return "heart.circle.fill"
         case .comments:  return "text.bubble.fill"
         case .follows:   return "person.badge.plus.fill"
         case .tags:      return "at"

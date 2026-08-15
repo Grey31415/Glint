@@ -311,6 +311,11 @@ private struct AboutTab: View {
                 .font(.system(size: 12))
                 .padding(.top, 8)
 
+            Text("MIT licensed")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .padding(.top, 6)
+
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -192,3 +192,7 @@ and reply the app makes.
 - These are private endpoints. They can change without warning; the probe above
   is how you find out what changed.
 - Rebuilding changes the ad-hoc signature, so macOS treats it as a new app.
+
+## Licence
+
+[MIT](LICENSE). Do what you like with it.

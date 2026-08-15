@@ -31,7 +31,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Made in Germany by Greyson Wiesenack</string>
+	<string>Copyright (c) 2026 Greyson Wiesenack. MIT licensed.</string>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
 </dict>

@@ -114,7 +114,7 @@ Instagram signed you out, there's a button to sign back in.
 
 <div align="center">
 
-Made in Germany by **Greyson Wiesenack**
+Made in Germany by **Greyson Wiesenack** &nbsp;·&nbsp; [MIT licensed](LICENSE)
 
 <sub>Curious how it works under the hood? → <a href="README_for_nerds.md">README for nerds</a></sub>
 

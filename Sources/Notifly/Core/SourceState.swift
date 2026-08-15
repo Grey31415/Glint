@@ -65,16 +65,35 @@ struct SourceDescriptor: Equatable {
 
 /// A value snapshot the SwiftUI layer renders. Keeping the view value-driven
 /// makes diffing (and therefore the animations) behave.
+///
+/// `state` here is the *displayed* state: the source's raw count minus anything
+/// the user has marked as read. The untouched truth stays on the source itself,
+/// and is what Settings reports.
 struct SourceSnapshot: Identifiable, Equatable {
     let descriptor: SourceDescriptor
     let state: SourceState
+    /// How many unread the read-watermark is currently hiding.
+    let suppressed: Int
     var id: String { descriptor.id }
 
     var displayCount: Int { state.count ?? 0 }
+
+    /// Status line for menus, mentioning the watermark when one is in effect.
+    var menuSummary: String {
+        suppressed > 0
+            ? "\(state.summary) (\(suppressed) marked read)"
+            : state.summary
+    }
 
     /// "3", "42", "99+" — capped so the capsule never has to grow unbounded.
     var countText: String {
         let c = displayCount
         return c > 99 ? "99+" : String(c)
+    }
+
+    /// Whether this dot is drawn at all. Shared by the cluster and the status
+    /// item, so the two can never disagree about whether anything is on screen.
+    func isVisible(hideWhenEmpty: Bool) -> Bool {
+        !hideWhenEmpty || displayCount > 0 || state.isBlocked || state == .loading
     }
 }

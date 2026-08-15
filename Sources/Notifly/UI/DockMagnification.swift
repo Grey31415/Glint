@@ -127,9 +127,6 @@ extension Array where Element == MagnifiedPlacement {
         guard let lo = map(\.minX).min(), let hi = map(\.maxX).max(), lo <= hi else { return nil }
         return lo...hi
     }
-
-    /// Tallest scale in the cluster, used to size the backdrop.
-    var peakScale: CGFloat { map(\.scale).max() ?? 1 }
 }
 
 /// Turns a source snapshot into the widths the magnifier needs. Uses a
@@ -162,10 +159,16 @@ enum DotMetrics {
         CGFloat(text.count) * digitWidth(height: height)
     }
 
+    /// Width of a capsule holding `digits` characters. Also used to size the
+    /// colour field, which is why it takes a count rather than a string.
+    static func capsuleWidth(digits: Int, height: CGFloat) -> CGFloat {
+        max(height, CGFloat(digits) * digitWidth(height: height) + height * 0.70)
+    }
+
     static func restWidth(for snapshot: SourceSnapshot, height: CGFloat, showCount: Bool) -> CGFloat {
         let bare = height * 0.60   // the quiet dot
         guard showCount, snapshot.displayCount > 0 else { return bare }
-        return max(height, textWidth(snapshot.countText, height: height) + height * 0.70)
+        return capsuleWidth(digits: snapshot.countText.count, height: height)
     }
 
     static func activeWidth(for snapshot: SourceSnapshot, height: CGFloat) -> CGFloat {

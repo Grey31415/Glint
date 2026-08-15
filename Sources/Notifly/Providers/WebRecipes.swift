@@ -41,7 +41,9 @@ extension WebRecipe {
             glyph: .whatsapp,
             accent: .whatsapp,
             openURL: URL(string: "https://web.whatsapp.com/"),
-            openBundleID: "net.whatsapp.WhatsApp"
+            // Deliberately nil: clicking opens WhatsApp Web in the browser even
+            // when the desktop app is installed.
+            openBundleID: nil
         ),
         trackingURL: URL(string: "https://web.whatsapp.com/")!,
         loginURL: URL(string: "https://web.whatsapp.com/")!,

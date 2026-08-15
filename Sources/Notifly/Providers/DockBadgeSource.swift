@@ -16,7 +16,9 @@ extension DockRecipe {
             glyph: .whatsapp,
             accent: .whatsapp,
             openURL: URL(string: "https://web.whatsapp.com/"),
-            openBundleID: "net.whatsapp.WhatsApp"),
+            // Reads the desktop app's badge, but still opens the browser on
+            // click, to match the web-backed mode.
+            openBundleID: nil),
         tileTitles: ["WhatsApp"])
 }
 

@@ -8,10 +8,10 @@ Hover it and the cluster magnifies the way the Dock does, growing *downwards*
 out of the notch.
 
 - **Quiet** — a small muted circle, doing nothing.
-- **Unread** — a capsule carrying the number, filled with a slowly rotating
-  conic gradient and a soft bloom in the service's colour.
+- **Unread** — a capsule carrying the number, filled with soft colour blobs
+  wandering behind the mask, under a breathing bloom in the service's colour.
 - **Hover** — dock-style magnification; the capsule opens up to show the service
-  mark, and a black panel slides out of the notch behind the cluster.
+  mark. No panel, no backdrop — the tiles just lift.
 - **New message** — a ring pulses outward from the dot.
 
 Instagram ships first. WhatsApp and iMessage are built in, and adding a fourth
@@ -60,15 +60,26 @@ opened read-only.
 
 ## Using it
 
-- **Click** a dot to open that service. If it is blocked on something — signed
-  out, missing a permission — clicking runs the fix instead.
-- **Right-click** for status, refresh, settings, quit.
-- The menu bar item does the same, and is there so there is always a way back to
+- **Click** a dot to open that service in the browser. If it is blocked on
+  something — signed out, missing a permission — clicking runs the fix instead.
+- **Option-click** to mark that service as read.
+- **Right-click** for status, mark-as-read, refresh, settings, quit.
+- The menu bar item does the same. It can be switched off, but it reappears by
+  itself whenever no dots are on screen, so there is always a way back to
   Settings.
 
 The overlay only accepts clicks while the cursor is actually over a dot;
 the rest of the time it is transparent to the mouse, so the menu bar underneath
 keeps working normally.
+
+### Marking as read
+
+Neither Instagram nor WhatsApp will let anything be marked read from outside
+without opening the conversation, so this is a local watermark rather than a real
+read receipt: Notifly remembers what the count was and shows only what has
+arrived since. If the real count later drops — because the messages were read for
+real — the watermark drops with it, so the next message still lights the dot.
+**Undo Mark as Read** brings the hidden ones back.
 
 ---
 
@@ -84,6 +95,28 @@ app looking deliberate on an external monitor.
 
 The panel sits at window level 25 — one above the menu bar — and joins all
 Spaces, so it stays put over full-screen apps.
+
+### The colour field
+
+The lit interior is a square canvas of soft radial blobs, one per brand colour,
+each following its own pair of summed sines. The frequency ratios are irrational,
+so no blob repeats its own path and no two fall back into step — the fill keeps
+rearranging instead of cycling.
+
+The canvas is a **square sized for a four-digit capsule**, not for the tile it
+sits in. A fill matching the current shape runs out from under the tile as soon
+as the number gets longer, and a rotating one leaves the corners bare.
+
+Two things were tuned by rendering them and looking: blobs are small enough, and
+roam far enough, that the ones painted first are not permanently buried by the
+ones painted last — otherwise two of Instagram's five colours would never
+surface. Additive blending was the obvious alternative and is wrong here, since
+overlaps blow out to white and every brand ends up pink. WhatsApp's greens are
+ordered dark-to-light for the same reason: unlike Instagram's, they do not share
+a luminance, so leading with the dark ones leaves a black hole.
+
+Lit dots redraw at 30fps. Quiet ones are static, so the cost only exists while
+something is actually waiting for you.
 
 ### The magnification
 
@@ -140,9 +173,11 @@ static let telegram = WebRecipe(
     kind: .telegram,
     descriptor: SourceDescriptor(id: "telegram", name: "Telegram",
                                  glyph: .symbol("paperplane.fill"),
-                                 accent: .init(start: ..., mid: ..., end: ...),
+                                 // colours are blended as drifting blobs; base
+                                 // fills the gaps, glow is the outer bloom
+                                 accent: Accent(colors: [...], base: ..., glow: ...),
                                  openURL: URL(string: "https://web.telegram.org/"),
-                                 openBundleID: "ru.keepcoder.Telegram"),
+                                 openBundleID: nil),   // nil = open in browser
     trackingURL: URL(string: "https://web.telegram.org/a/")!,
     loginURL: URL(string: "https://web.telegram.org/a/")!,
     defaultExtractor: telegramExtractor)
@@ -181,3 +216,5 @@ Sources/Notifly/
 - Rebuilding invalidates the ad-hoc signature and therefore Full Disk Access.
 - Instagram counts conversations with unread messages, not individual messages —
   that is what the site itself reports.
+- Setting **Maximum scale** to 1× disables magnification entirely; that is the
+  slider's left end, not a bug.

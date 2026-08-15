@@ -63,6 +63,7 @@ private struct SourceRow: View {
     @State private var draftExtractor = ""
 
     private var source: (any NotificationSource)? { hub.source(for: kind.rawValue) }
+    private var snapshot: SourceSnapshot? { hub.snapshots.first { $0.id == kind.rawValue } }
     private var enabled: Bool { prefs.isEnabled(kind) }
 
     var body: some View {
@@ -101,6 +102,14 @@ private struct SourceRow: View {
                     }
                     Button("Refresh") { source.refresh() }
                         .controlSize(.small)
+                    if let snapshot, snapshot.displayCount > 0 {
+                        Button("Mark as read") { hub.markRead(kind.rawValue) }
+                            .controlSize(.small)
+                    }
+                    if let snapshot, snapshot.suppressed > 0 {
+                        Button("Unhide \(snapshot.suppressed)") { hub.clearReadMarks() }
+                            .controlSize(.small)
+                    }
                 }
             }
 

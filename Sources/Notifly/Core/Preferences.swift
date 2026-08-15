@@ -167,6 +167,18 @@ final class Preferences: ObservableObject {
         store("customExtractor.\(kind.rawValue)", js ?? "")
     }
 
+    // MARK: - Mark-as-read watermarks
+
+    /// Per-source "I have seen these" watermark, keyed by source id.
+    ///
+    /// Written by the hub, which rebuilds its own snapshots straight afterwards,
+    /// so this deliberately skips `objectWillChange` — publishing here would
+    /// make every clamp tear down and rebuild the whole source set.
+    var readBaselines: [String: Int] {
+        get { defaults.dictionary(forKey: "readBaselines") as? [String: Int] ?? [:] }
+        set { defaults.set(newValue, forKey: "readBaselines") }
+    }
+
     // MARK: - Login item
 
     var launchAtLogin: Bool {

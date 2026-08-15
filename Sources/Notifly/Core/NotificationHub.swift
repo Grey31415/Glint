@@ -96,6 +96,42 @@ final class NotificationHub: ObservableObject {
         snapshots.reduce(0) { $0 + $1.displayCount }
     }
 
+    var totalSuppressed: Int {
+        snapshots.reduce(0) { $0 + $1.suppressed }
+    }
+
+    // MARK: - Mark as read
+
+    /// Instagram and WhatsApp will not let us mark anything read on their side
+    /// without opening the conversation, so this is a local watermark: remember
+    /// what the count was, and show only what has arrived since. If the real
+    /// count later drops — because the messages were read for real — the
+    /// watermark drops with it, so the next message still lights the dot.
+    func markRead(_ id: String) {
+        guard let raw = sources[id]?.state.count, raw > 0 else { return }
+        var baselines = preferences.readBaselines
+        baselines[id] = raw
+        preferences.readBaselines = baselines
+        rebuildSnapshots()
+    }
+
+    func markAllRead() {
+        var baselines = preferences.readBaselines
+        for (id, source) in sources {
+            guard let raw = source.state.count, raw > 0 else { continue }
+            baselines[id] = raw
+        }
+        preferences.readBaselines = baselines
+        rebuildSnapshots()
+    }
+
+    /// Undo: bring anything currently hidden back into view.
+    func clearReadMarks() {
+        guard !preferences.readBaselines.isEmpty else { return }
+        preferences.readBaselines = [:]
+        rebuildSnapshots()
+    }
+
     // MARK: - Wiring
 
     /// Bring the live source set in line with what preferences ask for.
@@ -132,10 +168,37 @@ final class NotificationHub: ObservableObject {
     }
 
     private func rebuildSnapshots() {
+        var baselines = preferences.readBaselines
+        var baselinesChanged = false
+
         let next: [SourceSnapshot] = order.compactMap { id in
             guard let source = sources[id] else { return nil }
-            return SourceSnapshot(descriptor: source.descriptor, state: source.state)
+
+            // Only counted states can be watermarked; errors and permission
+            // prompts pass through untouched.
+            guard let raw = source.state.count else {
+                return SourceSnapshot(descriptor: source.descriptor,
+                                      state: source.state,
+                                      suppressed: 0)
+            }
+
+            // Clamp: the watermark can never exceed the real count, so reading
+            // messages elsewhere releases it rather than muting the dot forever.
+            let stored = baselines[id] ?? 0
+            let baseline = min(stored, raw)
+            if baseline == 0 {
+                if baselines.removeValue(forKey: id) != nil { baselinesChanged = true }
+            } else if stored != baseline {
+                baselines[id] = baseline
+                baselinesChanged = true
+            }
+
+            return SourceSnapshot(descriptor: source.descriptor,
+                                  state: .ok(count: raw - baseline),
+                                  suppressed: baseline)
         }
+
+        if baselinesChanged { preferences.readBaselines = baselines }
         guard next != snapshots else { return }
 
         for snap in next {

@@ -221,12 +221,15 @@ final class OverlayController: ObservableObject {
         }
     }
 
-    /// How magnified the cluster currently is, 0…1. Drives the backdrop.
-    var hoverAmount: CGFloat { placements.map(\.progress).max() ?? 0 }
-
     // MARK: - Actions
 
     func handleClick(_ id: String) {
+        // Option-click is the quick way to dismiss a badge without opening the
+        // service; the right-click menu is the discoverable one.
+        if NSEvent.modifierFlags.contains(.option) {
+            hub.markRead(id)
+            return
+        }
         guard let source = hub.source(for: id) else { return }
         if let remedy = source.remedy {
             remedy.perform()

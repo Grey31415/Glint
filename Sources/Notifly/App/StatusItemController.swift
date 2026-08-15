@@ -43,8 +43,17 @@ final class StatusItemController {
         teardown()
     }
 
+    /// True when the cluster is currently drawing nothing at all — every source
+    /// off, or all of them quiet with "hide when empty" on.
+    private var clusterIsEmpty: Bool {
+        !hub.snapshots.contains { $0.isVisible(hideWhenEmpty: preferences.hideWhenEmpty) }
+    }
+
     private func sync() {
-        guard preferences.showStatusItem else { return teardown() }
+        // The status item can be switched off, but not into a corner: with no
+        // dots on screen and no menu bar item there would be no way left to
+        // reach Settings or Quit, so it comes back until a dot does.
+        guard preferences.showStatusItem || clusterIsEmpty else { return teardown() }
 
         let item = self.item ?? {
             let new = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -74,13 +83,34 @@ final class StatusItemController {
             menu.addItem(empty)
         } else {
             for snapshot in hub.snapshots {
-                let entry = NSMenuItem(title: "\(snapshot.descriptor.name) — \(snapshot.state.summary)",
+                let entry = NSMenuItem(title: "\(snapshot.descriptor.name) — \(snapshot.menuSummary)",
                                        action: #selector(MenuTarget.openSource(_:)),
                                        keyEquivalent: "")
                 entry.target = target
                 entry.representedObject = snapshot.id
                 menu.addItem(entry)
             }
+        }
+
+        let unread = hub.snapshots.filter { $0.displayCount > 0 }
+        if !unread.isEmpty {
+            menu.addItem(.separator())
+            for snapshot in unread {
+                let entry = NSMenuItem(title: "Mark \(snapshot.descriptor.name) as Read",
+                                       action: #selector(MenuTarget.markRead(_:)),
+                                       keyEquivalent: "")
+                entry.target = target
+                entry.representedObject = snapshot.id
+                menu.addItem(entry)
+            }
+            menu.addItem(withTargetedTitle: "Mark All as Read",
+                         action: #selector(MenuTarget.markAllRead),
+                         target: target)
+        }
+        if hub.totalSuppressed > 0 {
+            menu.addItem(withTargetedTitle: "Undo Mark as Read (\(hub.totalSuppressed) hidden)",
+                         action: #selector(MenuTarget.undoMarkRead),
+                         target: target)
         }
 
         menu.addItem(.separator())
@@ -106,6 +136,9 @@ final class StatusItemController {
                        guard let source = self?.hub.source(for: id) else { return }
                        if let remedy = source.remedy { remedy.perform() } else { source.activate() }
                    },
+                   markRead: { [weak self] id in self?.hub.markRead(id) },
+                   markAllRead: { [weak self] in self?.hub.markAllRead() },
+                   undoMarkRead: { [weak self] in self?.hub.clearReadMarks() },
                    refresh: { [weak self] in self?.onRefresh() },
                    openSettings: { [weak self] in self?.onOpenSettings() })
     }()
@@ -113,13 +146,22 @@ final class StatusItemController {
 
 private final class MenuTarget: NSObject {
     private let openSourceHandler: @MainActor (String) -> Void
+    private let markReadHandler: @MainActor (String) -> Void
+    private let markAllReadHandler: @MainActor () -> Void
+    private let undoMarkReadHandler: @MainActor () -> Void
     private let refreshHandler: @MainActor () -> Void
     private let openSettingsHandler: @MainActor () -> Void
 
     init(openSource: @escaping @MainActor (String) -> Void,
+         markRead: @escaping @MainActor (String) -> Void,
+         markAllRead: @escaping @MainActor () -> Void,
+         undoMarkRead: @escaping @MainActor () -> Void,
          refresh: @escaping @MainActor () -> Void,
          openSettings: @escaping @MainActor () -> Void) {
         self.openSourceHandler = openSource
+        self.markReadHandler = markRead
+        self.markAllReadHandler = markAllRead
+        self.undoMarkReadHandler = undoMarkRead
         self.refreshHandler = refresh
         self.openSettingsHandler = openSettings
     }
@@ -129,6 +171,13 @@ private final class MenuTarget: NSObject {
         MainActor.assumeIsolated { openSourceHandler(id) }
     }
 
+    @objc func markRead(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        MainActor.assumeIsolated { markReadHandler(id) }
+    }
+
+    @objc func markAllRead() { MainActor.assumeIsolated { markAllReadHandler() } }
+    @objc func undoMarkRead() { MainActor.assumeIsolated { undoMarkReadHandler() } }
     @objc func refresh() { MainActor.assumeIsolated { refreshHandler() } }
     @objc func openSettings() { MainActor.assumeIsolated { openSettingsHandler() } }
     @objc func quit() { NSApp.terminate(nil) }

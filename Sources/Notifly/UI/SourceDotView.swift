@@ -3,8 +3,8 @@ import SwiftUI
 /// One source, rendered as a dot that grows into a capsule.
 ///
 /// Resting shape depends on the state: nothing waiting is a small muted circle,
-/// unread messages make it a colour-cycling capsule carrying the number. Under
-/// the cursor it magnifies and opens up to show the service mark as well.
+/// unread messages make it a capsule carrying the number over a drifting colour
+/// field. Under the cursor it magnifies and opens up to show the service mark.
 struct SourceDotView: View {
     let snapshot: SourceSnapshot
     let placement: MagnifiedPlacement
@@ -14,6 +14,7 @@ struct SourceDotView: View {
     let onTap: () -> Void
 
     @State private var rippleTick = 0
+    @State private var glowPhase: CGFloat = 0
 
     private var accent: Accent { snapshot.descriptor.accent }
     private var isAttention: Bool { snapshot.state.isAttention }
@@ -36,31 +37,50 @@ struct SourceDotView: View {
     /// grow exactly in step with the capsule instead of being scaled bitmaps.
     private var metric: CGFloat { layout.dotSize * scale }
 
+    /// Side of the square the colour field is painted on. Sized for a
+    /// four-digit capsule — comfortably wider than anything that can actually
+    /// be displayed — so the fill never runs out from under the tile.
+    private var fieldSide: CGFloat {
+        max(width, height, DotMetrics.capsuleWidth(digits: 4, height: metric)) * 1.15
+    }
+
     private var showsCount: Bool {
         snapshot.displayCount > 0 && (showCountAtRest || progress > 0.05)
     }
 
     var body: some View {
         ZStack {
-            fill
             ArrivalRipple(tick: rippleTick, color: accent.glow)
             statusRing
             content
         }
         .frame(width: width, height: height)
+        // Behind, not inside: the fill keeps its own square size while the
+        // capsule keeps the layout size, and the clip below trims the overlap.
+        .background(alignment: .center) { fillLayer }
+        .overlay { specularHighlight }
         .clipShape(Capsule(style: .continuous))
         .overlay(
             Capsule(style: .continuous)
-                .strokeBorder(Color.white.opacity(isAttention ? 0.22 : 0.10),
+                .strokeBorder(isAttention ? Color.white.opacity(0.22) : Palette.hairline,
                               lineWidth: max(0.5, 0.5 * scale))
         )
-        .shadow(color: accent.glow.opacity(isAttention ? 0.55 : 0),
-                radius: 6 * scale, x: 0, y: 0)
+        .shadow(color: accent.glow.opacity(isAttention ? 0.30 + 0.32 * glowPhase : 0),
+                radius: (5 + 4 * glowPhase) * scale)
         .shadow(color: .black.opacity(0.45), radius: 3 * scale, x: 0, y: 1 * scale)
         .contentShape(Capsule(style: .continuous))
         .onTapGesture(perform: onTap)
         .onChange(of: snapshot.displayCount) { old, new in
             if new > old { rippleTick &+= 1 }
+        }
+        .onChange(of: isAttention, initial: true) { _, lit in
+            if lit {
+                withAnimation(.easeInOut(duration: 2.1).repeatForever(autoreverses: true)) {
+                    glowPhase = 1
+                }
+            } else {
+                withAnimation(.easeOut(duration: 0.3)) { glowPhase = 0 }
+            }
         }
         .help("\(snapshot.descriptor.name) — \(snapshot.state.summary)")
     }
@@ -68,25 +88,28 @@ struct SourceDotView: View {
     // MARK: - Layers
 
     @ViewBuilder
-    private var fill: some View {
+    private var fillLayer: some View {
         if isAttention {
-            // The signature move: a conic gradient turning slowly inside the dot.
-            AngularGradient(colors: accent.stops, center: .center)
-                .spin(active: true, period: 7)
-                .overlay(
-                    // Soft highlight so it reads as a lit object, not a flat swatch.
-                    RadialGradient(colors: [.white.opacity(0.35), .clear],
-                                   center: .init(x: 0.32, y: 0.22),
-                                   startRadius: 0,
-                                   endRadius: max(width, height) * 0.7)
-                )
-                .breathe(active: true, from: 1.0, to: 1.05, period: 1.9)
+            AuroraFill(accent: accent, side: fieldSide)
         } else if snapshot.state.isBlocked {
             Palette.surface
         } else {
             Palette.idle
                 .opacity(0.55 + 0.30 * progress)
                 .breathe(active: ambientBreathing, from: 0.92, to: 1.06, period: 4.2)
+        }
+    }
+
+    /// Sized to the capsule rather than to the colour field, so the sheen stays
+    /// pinned to the tile's own top-left as it grows.
+    @ViewBuilder
+    private var specularHighlight: some View {
+        if isAttention {
+            RadialGradient(colors: [.white.opacity(0.30), .clear],
+                           center: .init(x: 0.30, y: 0.18),
+                           startRadius: 0,
+                           endRadius: max(width, height) * 0.75)
+                .allowsHitTesting(false)
         }
     }
 
@@ -128,7 +151,7 @@ struct SourceDotView: View {
                                   weight: .bold,
                                   design: .rounded).monospacedDigit())
                     .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.3), radius: 0.5 * scale, y: 0.5)
+                    .shadow(color: .black.opacity(0.35), radius: 0.5 * scale, y: 0.5)
                     .fixedSize()
                     .lineLimit(1)
                     .transition(.scale(scale: 0.4).combined(with: .opacity))

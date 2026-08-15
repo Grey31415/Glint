@@ -4,63 +4,75 @@ import SwiftUI
 /// every machine regardless of appearance. So the palette is deliberately
 /// dark-only — it is hardware-matching, not theme-following.
 enum Palette {
-    static let notch      = Color(red: 0.043, green: 0.043, blue: 0.055)
     static let surface    = Color(red: 0.075, green: 0.076, blue: 0.094)
-    static let hairline   = Color.white.opacity(0.10)
+    static let hairline   = Color.white.opacity(0.14)
     static let idle       = Color(red: 0.40, green: 0.41, blue: 0.48)
-    static let textHi     = Color(red: 0.97, green: 0.97, blue: 0.99)
     static let textLo     = Color(red: 0.62, green: 0.63, blue: 0.70)
     static let warning    = Color(red: 1.00, green: 0.74, blue: 0.33)
 }
 
-/// A three-stop accent. Rendered as a slowly rotating conic gradient when the
-/// source has something to report, which is what gives the dot its life.
+/// The colours a lit dot is made of.
+///
+/// `colors` are painted as soft blobs drifting behind the dot's mask, over a
+/// `base` wash. More colours means a richer blend, so a brand with a five-stop
+/// gradient can keep all five.
 struct Accent: Equatable {
-    let start: Color
-    let mid: Color
-    let end: Color
+    let colors: [Color]
+    /// Fills the whole tile behind the blobs, so there is never a bare patch.
+    let base: Color
+    /// Outer bloom.
+    let glow: Color
 
-    var stops: [Color] { [start, mid, end, start] }
+    private static func hex(_ value: UInt32) -> Color {
+        Color(red: Double((value >> 16) & 0xFF) / 255,
+              green: Double((value >> 8) & 0xFF) / 255,
+              blue: Double(value & 0xFF) / 255)
+    }
 
-    /// Colour used for the outer bloom.
-    var glow: Color { mid }
-
-    /// Flat fill for small elements where a gradient would just look muddy.
-    var flat: Color { mid }
-
+    /// The full Instagram gradient, not just the pink end of it.
     static let instagram = Accent(
-        start: Color(red: 1.00, green: 0.48, blue: 0.27),   // #FF7A45
-        mid:   Color(red: 0.95, green: 0.20, blue: 0.50),   // #F2337F
-        end:   Color(red: 0.48, green: 0.29, blue: 1.00)    // #7B4BFF
-    )
+        colors: [hex(0xFEDA75),   // yellow
+                 hex(0xFA7E1E),   // orange
+                 hex(0xD62976),   // magenta
+                 hex(0x962FBF),   // purple
+                 hex(0x4F5BD5)],  // blue
+        base: hex(0xB4287E),
+        glow: hex(0xD62976))
 
+    /// Shades of green, deep forest through to light mint.
+    ///
+    /// Ordered dark-to-light on purpose. Later blobs sit on top, and the
+    /// Instagram palette gets away with any order because its colours share a
+    /// luminance; these do not, so leading with the dark greens would leave the
+    /// tile looking like a black hole.
     static let whatsapp = Accent(
-        start: Color(red: 0.24, green: 0.88, blue: 0.48),   // #3DE07A
-        mid:   Color(red: 0.09, green: 0.76, blue: 0.39),   // #16C264
-        end:   Color(red: 0.04, green: 0.62, blue: 0.39)    // #0A9E64
-    )
+        colors: [hex(0x0A6E3C),
+                 hex(0x12A150),
+                 hex(0x8BF7B4),
+                 hex(0x3DE07A),
+                 hex(0x25D366)],
+        base: hex(0x16A757),
+        glow: hex(0x25D366))
 
     static let imessage = Accent(
-        start: Color(red: 0.35, green: 0.78, blue: 1.00),   // #5AC8FF
-        mid:   Color(red: 0.18, green: 0.55, blue: 1.00),   // #2E8BFF
-        end:   Color(red: 0.29, green: 0.36, blue: 1.00)    // #4B5BFF
-    )
+        colors: [hex(0x2E5BFF),
+                 hex(0x5B3BFF),
+                 hex(0x8FDCFF),
+                 hex(0x35B4FF),
+                 hex(0x0A84FF)],
+        base: hex(0x1470E8),
+        glow: hex(0x2E8BFF))
 
     static let generic = Accent(
-        start: Color(red: 0.73, green: 0.75, blue: 1.00),
-        mid:   Color(red: 0.54, green: 0.58, blue: 1.00),
-        end:   Color(red: 0.42, green: 0.46, blue: 0.94)
-    )
+        colors: [hex(0xC7CCFF), hex(0x8A94FF), hex(0x5B63E8), hex(0x3F46B8)],
+        base: hex(0x5A62DE),
+        glow: hex(0x8A94FF))
 }
 
 /// Shared spring vocabulary. One place to retune the whole feel.
 enum Motion {
-    /// Hover enter/exit of the whole cluster.
-    static let hover = Animation.spring(response: 0.32, dampingFraction: 0.72)
     /// Per-dot magnification tracking the cursor.
     static let magnify = Animation.interpolatingSpring(stiffness: 420, damping: 30)
     /// Count changes and dots appearing/disappearing.
     static let pop = Animation.spring(response: 0.42, dampingFraction: 0.58)
-    /// Backdrop sliding out of the notch.
-    static let curtain = Animation.spring(response: 0.36, dampingFraction: 0.80)
 }

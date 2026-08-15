@@ -1,0 +1,27 @@
+# Build products
+.build/
+build/
+DerivedData/
+*.app/
+*.dSYM/
+
+# Local agent / editor scratch
+CLAUDE.md
+.claude/
+*.local.md
+.vscode/
+.idea/
+
+# Xcode
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+
+# macOS
+.DS_Store
+.AppleDouble
+._*
+
+# Swift Package Manager
+Package.resolved
+.swiftpm/

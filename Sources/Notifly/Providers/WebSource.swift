@@ -122,8 +122,9 @@ final class WebSource: BaseSource, NotificationSource {
     }()
 
     private static let desktopUserAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
-        + "(KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+        ProcessInfo.processInfo.environment["NOTIFLY_UA"]
+        ?? ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+            + "(KHTML, like Gecko) Version/18.0 Safari/605.1.15")
 
     private func buildWebView() {
         let extractor = currentExtractor
@@ -184,9 +185,16 @@ final class WebSource: BaseSource, NotificationSource {
 
     /// Drives the in-page extractor from Swift. WebKit throttles the page's own
     /// timers when the view is off-screen; this one is never throttled.
+    /// `NOTIFLY_DEBUG=1` logs every payload plus a survey of the live DOM, which
+    /// is the only practical way to work out why a site's markup stopped
+    /// matching — the session lives in the app bundle and cannot be inspected
+    /// from outside it.
+    static let debugLogging = ProcessInfo.processInfo.environment["NOTIFLY_DEBUG"] == "1"
+
     private func tick() {
         guard let webView else { return }
         webView.evaluateJavaScript("window.__notifly && window.__notifly.tick()") { _, _ in }
+        if Self.debugLogging { logDOMSurvey() }
 
         // Nothing at all for two minutes means the page is wedged — reload it.
         if let last = lastPayloadAt, Date().timeIntervalSince(last) > 120 {
@@ -197,8 +205,46 @@ final class WebSource: BaseSource, NotificationSource {
 
     // MARK: - Results
 
+    private func logDOMSurvey() {
+        let js = #"""
+        (function () {
+          var out = {
+            title: document.title,
+            url: location.href,
+            paneSide: !!document.querySelector('#pane-side'),
+            canvases: document.querySelectorAll('canvas').length,
+            listitems: document.querySelectorAll('[role="listitem"]').length,
+            rows: document.querySelectorAll('[role="row"]').length,
+            gridcells: document.querySelectorAll('[role="gridcell"]').length,
+            bodyLen: document.body ? document.body.innerHTML.length : 0,
+            text: document.body ? (document.body.innerText || '').replace(/\s+/g, ' ').slice(0, 500) : '',
+            labels: []
+          };
+          var seen = {}, all = document.querySelectorAll('[aria-label]');
+          for (var i = 0; i < all.length && out.labels.length < 60; i++) {
+            var l = (all[i].getAttribute('aria-label') || '').slice(0, 70);
+            if (l && !seen[l]) { seen[l] = 1; out.labels.push(l); }
+          }
+          return JSON.stringify(out);
+        })()
+        """#
+        webView?.evaluateJavaScript(js) { value, error in
+            if let error {
+                NSLog("[Notifly:%@] survey error %@", self.recipe.kind.rawValue, error.localizedDescription)
+            } else if let text = value as? String {
+                NSLog("[Notifly:%@] SURVEY %@", self.recipe.kind.rawValue, text)
+            }
+        }
+    }
+
     private func handle(_ payload: WebPayload) {
         lastPayloadAt = Date()
+        if Self.debugLogging {
+            NSLog("[Notifly:%@] payload status=%@ count=%@ method=%@ href=%@",
+                  recipe.kind.rawValue, payload.status,
+                  payload.count.map(String.init) ?? "-",
+                  payload.method ?? "-", payload.href ?? "-")
+        }
         switch payload.status {
         case "ok":
             let count = max(0, payload.count ?? 0)

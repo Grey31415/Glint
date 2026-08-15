@@ -5,25 +5,24 @@ import Combine
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let preferences = Preferences()
 
-    private var hub: NotificationHub!
+    private var model: NotiflyModel!
     private var overlay: OverlayController!
     private var statusItem: StatusItemController!
     private var settings: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        hub = NotificationHub(preferences: preferences)
+        model = NotiflyModel(preferences: preferences)
 
-        overlay = OverlayController(hub: hub, preferences: preferences)
+        overlay = OverlayController(model: model, preferences: preferences)
         overlay.onOpenSettings = { [weak self] in self?.openSettings() }
         overlay.onQuit = { NSApp.terminate(nil) }
 
         statusItem = StatusItemController(
-            hub: hub,
+            model: model,
             preferences: preferences,
-            onOpenSettings: { [weak self] in self?.openSettings() },
-            onRefresh: { [weak self] in self?.hub.refreshAll() })
+            onOpenSettings: { [weak self] in self?.openSettings() })
 
-        hub.start()
+        model.start()
         overlay.start()
         statusItem.start()
 
@@ -38,13 +37,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         overlay?.stop()
-        hub?.stop()
+        model?.stop()
         statusItem?.stop()
     }
 
     func openSettings() {
         if settings == nil {
-            settings = SettingsWindowController(hub: hub, preferences: preferences)
+            settings = SettingsWindowController(model: model, preferences: preferences)
         }
         settings?.show()
     }

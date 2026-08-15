@@ -1,7 +1,7 @@
 import AppKit
 import WebKit
 
-/// A plain browser window for signing in to a web-backed source.
+/// A plain browser window for signing in.
 ///
 /// It shares the website data store with the background view, so the cookies it
 /// earns are immediately the cookies the background view uses — no session
@@ -12,7 +12,8 @@ final class LoginWindowController {
     private var observer: NSObjectProtocol?
     private let onClose: () -> Void
 
-    init(recipe: WebRecipe,
+    init(title: String,
+         url: URL,
          dataStore: WKWebsiteDataStore,
          userAgent: String,
          onClose: @escaping () -> Void) {
@@ -26,13 +27,13 @@ final class LoginWindowController {
                                 configuration: config)
         webView.customUserAgent = userAgent
         webView.autoresizingMask = [.width, .height]
-        webView.load(URLRequest(url: recipe.loginURL))
+        webView.load(URLRequest(url: url))
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 680),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered,
                               defer: false)
-        window.title = "Sign in to \(recipe.descriptor.name)"
+        window.title = title
         window.contentView = webView
         window.isReleasedWhenClosed = false
         window.center()

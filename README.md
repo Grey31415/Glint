@@ -1,223 +1,177 @@
 # Notifly
 
-A colour dot that lives beside the notch and tells you when someone has messaged
-you. Built for the case where you deleted the Instagram app but still want to
-know a DM landed — the same number the browser tab shows, without the browser.
+A colour dot beside the notch that tells you when a friend has actually written
+to you — and, on hover, who and what they said.
 
-Hover it and the cluster magnifies the way the Dock does, growing *downwards*
-out of the notch.
+Built for the case where you deleted the Instagram app but still want to stay in
+touch. The goal is not to surface Instagram faster. It is to make it easy **not**
+to open Instagram and still not miss a friend.
 
-- **Quiet** — a small muted circle, doing nothing.
-- **Unread** — a capsule carrying the number, filled with soft colour blobs
-  wandering behind the mask, under a breathing bloom in the service's colour.
-- **Hover** — dock-style magnification; the capsule opens up to show the service
-  mark. No panel, no backdrop — the tiles just lift.
-- **New message** — a ring pulses outward from the dot.
-
-Instagram ships first. WhatsApp and iMessage are built in, and adding a fourth
-service is one file.
+```
+        ┌──────────────────────────────┐
+   ●3 ──│  3 waiting                   │
+        │  2 messages · 1 reaction     │
+        ├──────────────────────────────┤
+        │  (D) Denis            2m     │
+        │      Alte schiffe und so     │
+        │  (B) Beniamin M       14m    │
+        │      Reacted 😂 to your msg  │
+        ├──────────────────────────────┤
+        │  ♥ Likes                 3   │
+        │  ＋ New followers         1   │
+        └──────────────────────────────┘
+```
 
 ---
 
-## Requirements
+## The idea
 
-macOS 14 or later, Xcode command line tools. Apple silicon or Intel.
+A notification badge is only useful if you can trust it. Instagram's cannot be
+trusted, because it counts a heart tapped on something you already sent the same
+as a friend asking you a question.
 
-## Build
+So Notifly splits them, and says so in two places:
+
+- **The dot burns full Instagram colour only when a real message is waiting.**
+  If everything waiting is reactions and likes, it drains to grey. You can tell
+  whether anything needs you without opening anything at all.
+- **The card lists the split explicitly** — "2 messages · 1 reaction" — and
+  renders reactions dimmed and italic, so they never masquerade as a reply.
+
+Every other category — likes, comments, follows, tags, message requests — is off
+by default and individually switchable. Turn them on and they are added into the
+one number on the dot and listed separately in the card.
+
+## Hidden mode
+
+The notch is a hole in the display: a region with no pixels. Hidden mode parks
+the dot *inside* it, so it is genuinely invisible rather than merely small. Move
+the cursor into the notch and it slides out.
+
+For when you would rather not know.
+
+---
+
+## Install
+
+Download the `.dmg`, drag Notifly to Applications.
+
+The build is ad-hoc signed rather than notarised, so the first launch is
+blocked. **Right-click Notifly → Open → Open** — once only. Or:
 
 ```sh
-./Scripts/build_app.sh          # produces ./Notifly.app
-open Notifly.app
+xattr -dr com.apple.quarantine /Applications/Notifly.app
 ```
+
+### Build it yourself
 
 ```sh
-CONFIG=debug ./Scripts/build_app.sh   # faster build
-UNIVERSAL=1  ./Scripts/build_app.sh   # arm64 + x86_64
-INSTALL=1    ./Scripts/build_app.sh   # also copy to /Applications
+./Scripts/build_app.sh              # ./Notifly.app
+./Scripts/make_dmg.sh               # dist/Notifly-<version>.dmg
+UNIVERSAL=1 ./Scripts/make_dmg.sh   # arm64 + x86_64
 ```
 
-The `.app` bundle is not optional: WebKit refuses to give an unbundled binary a
-persistent website data store, and without one the logins would not survive a
-relaunch. `swift run` will start, but every session would be forgotten.
-
-The bundle is ad-hoc signed, so its signature changes on every build. macOS ties
-Full Disk Access to that signature, which means **iMessage needs re-authorising
-after a rebuild**. The web sources are unaffected.
+macOS 14+. A bundle is not optional: WebKit refuses to give an unbundled binary
+a persistent data store, and the login would not survive a relaunch.
 
 ## First run
 
-Settings opens automatically. Enable what you want and sign in:
+Settings opens automatically. Sign in once, in-app. That session is an ordinary
+WebKit session stored under `~/Library/WebKit/com.grey31415.Notifly/`.
 
-| Source | How it reads the count | What it needs |
-| --- | --- | --- |
-| Instagram | Signed-in `instagram.com` session kept loaded in the background | Sign in once, in-app |
-| WhatsApp | `web.whatsapp.com` session, or the desktop app's Dock badge | QR scan, or Accessibility |
-| iMessage | `~/Library/Messages/chat.db`, read-only | Full Disk Access |
-
-Nothing leaves the machine. The sessions are ordinary WebKit sessions stored in
-`~/Library/WebKit/com.grey31415.Notifly/`, and the Messages database is only ever
-opened read-only.
-
-## Using it
-
-- **Click** a dot to open that service — its Mac app if one is installed,
-  otherwise the web version. If it is blocked on something — signed out, missing
-  a permission — clicking runs the fix instead.
-- **Option-click** to mark that service as read.
-- **Right-click** for status, mark-as-read, refresh, settings, quit.
-- The menu bar item does the same. It can be switched off, but it reappears by
-  itself whenever no dots are on screen, so there is always a way back to
-  Settings.
-
-The overlay only accepts clicks while the cursor is actually over a dot;
-the rest of the time it is transparent to the mouse, so the menu bar underneath
-keeps working normally.
-
-### Marking as read
-
-Neither Instagram nor WhatsApp will let anything be marked read from outside
-without opening the conversation, so this is a local watermark rather than a real
-read receipt: Notifly remembers what the count was and shows only what has
-arrived since. If the real count later drops — because the messages were read for
-real — the watermark drops with it, so the next message still lights the dot.
-**Undo Mark as Read** brings the hidden ones back.
+- **Hover** the dot for the card. **Click** a row to open that conversation.
+- **Click** the dot to open your inbox; **option-click** to mark everything read.
+- **Right-click** for the menu. The menu bar item does the same, and reappears
+  by itself whenever the dot is invisible, so there is always a way back.
 
 ---
 
 ## How it works
 
-### Where the dots go
+### Reading Instagram
+
+Instagram has no public unread API, but its own web client calls
+`/api/v1/direct_v2/inbox/` and `/api/v1/news/inbox/`. Notifly keeps your
+signed-in session loaded off-screen and issues the same requests *from inside
+that page*, so the cookies come along and the result is exactly what the site
+would show you. Nothing leaves the machine.
+
+The response shapes in `InstagramScript.swift` were verified against a live
+account rather than assumed — `NOTIFLY_PROBE=1` dumps the structure of both
+endpoints, and `NOTIFLY_DEBUG=1` logs every payload plus a survey of the live
+DOM. That harness exists because the previous version's WhatsApp support was
+written against guessed selectors and silently never worked.
+
+### Telling a reaction from a message
+
+The direct API marks it explicitly. A thread whose newest entry is
+`item_type: "action_log"` with `action_log.is_reaction_log == true` is somebody
+reacting to a message **you** sent — it carries no information and is counted in
+its own bucket. `is_sent_by_viewer` backs this up. Everything else — text,
+photos, voice notes, shared posts — is a real message.
+
+This is a flag, not a heuristic, so it does not rot when the markup changes.
+
+### Where the dot goes
 
 macOS reports the usable menu bar strips either side of the camera housing as
-`NSScreen.auxiliaryTopLeftArea` / `auxiliaryTopRightArea`. The gap between them
-*is* the notch, so the cluster anchors to `notchRect.minX`. Displays without a
-notch get a 200pt one invented in the middle of the menu bar, which keeps the
-app looking deliberate on an external monitor.
+`NSScreen.auxiliaryTopLeftArea` / `auxiliaryTopRightArea`; the gap between them
+*is* the notch. Displays without one get a 200pt notch invented in the middle of
+the menu bar, so the app still looks deliberate on an external monitor.
 
-The panel sits at window level 25 — one above the menu bar — and joins all
-Spaces, so it stays put over full-screen apps.
+The panel floats at window level 25 — one above the menu bar — joins all Spaces,
+and accepts clicks **only** where something is actually drawn, so the menu bar
+underneath keeps working. Cursor position is polled rather than observed,
+because a window with `ignoresMouseEvents` stops receiving mouse-moved events,
+and that flag is on most of the time.
 
 ### The colour field
 
 The lit interior is a square canvas of soft radial blobs, one per brand colour,
 each following its own pair of summed sines. The frequency ratios are irrational,
-so no blob repeats its own path and no two fall back into step — the fill keeps
+so no blob repeats its path and no two fall back into step — it keeps
 rearranging instead of cycling.
 
-The canvas is a **square sized for a four-digit capsule**, not for the tile it
-sits in. A fill matching the current shape runs out from under the tile as soon
-as the number gets longer, and a rotating one leaves the corners bare.
+The canvas is sized for a **four-digit capsule**, not for the tile it sits in: a
+fill matching the current shape runs out from under the tile as soon as the
+number gets longer, and a rotating one leaves the corners bare.
 
-Two things were tuned by rendering them and looking: blobs are small enough, and
-roam far enough, that the ones painted first are not permanently buried by the
-ones painted last — otherwise two of Instagram's five colours would never
-surface. Additive blending was the obvious alternative and is wrong here, since
-overlaps blow out to white and every brand ends up pink. WhatsApp's greens are
-ordered dark-to-light for the same reason: unlike Instagram's, they do not share
-a luminance, so leading with the dark ones leaves a black hole.
+Blob radius and drift were tuned by rendering and comparing, because colours
+painted first are otherwise permanently buried by the ones painted last — two of
+Instagram's five would never have surfaced. Additive blending was the obvious
+alternative and is wrong: overlaps blow out to white and every brand ends up
+pink.
 
-Lit dots redraw at 30fps. Quiet ones are static, so the cost only exists while
-something is actually waiting for you.
+Lit dots redraw at 30fps; quiet ones are static, so the cost only exists while
+something is actually waiting.
 
-### The magnification
+### Marking as read
 
-`DockMagnifier` reduces the Dock's behaviour to its two essentials: items under
-the cursor grow, and their neighbours are displaced to make room. Distances are
-measured against *rest* positions rather than displaced ones, so the layout
-cannot chase its own tail. The falloff is a raised cosine — 1 under the cursor,
-0 at the influence radius, flat at both ends, so nothing visibly pops as a dot
-enters or leaves the field.
-
-It is a pure function, and the window controller runs the exact same layout the
-view renders in order to decide where clicks are accepted. The clickable region
-is by construction the region that is drawn.
-
-Cursor position is polled rather than observed, because a window with
-`ignoresMouseEvents = true` stops receiving mouse-moved events — and that flag
-is on most of the time so the menu bar stays usable. The poll idles at 8 Hz and
-steps up to 100 Hz once the cursor is near.
-
-### Reading the counts
-
-Instagram and WhatsApp have no public unread-count API. Notifly keeps the page
-you are already logged into loaded in an off-screen `WKWebView` and reads the
-number from it — in decreasing order of reliability: the `(n)` the site puts in
-the tab title, then any `aria-label` spelling out "n unread", then the red badge
-next to the direct-messages link.
-
-Changes are pushed instantly by a `MutationObserver`; a Swift-side timer also
-drives the extractor, because WebKit throttles a page's own timers when the view
-is off-screen.
-
-When a site changes its markup, the fix is a few lines of JavaScript rather than
-a new build: **Settings → Sources → Custom extractor**. It takes a function
-expression returning `{ status, count, method }`. Settings shows which method
-produced the current number, so a silently broken scraper is distinguishable
-from a genuinely quiet inbox.
-
-iMessage is simpler — a read-only SQLite query against `chat.db`, counting
-inbound unread messages newer than a configurable cutoff so one forgotten thread
-from years ago cannot permanently pin the badge.
+Instagram will not let anything be marked read from outside without opening the
+conversation, so this is a local watermark, not a read receipt: Notifly
+remembers the count and shows only what arrives after. It is clamped to the real
+count, so reading the messages for real releases it — it cannot silently mute
+you forever. **Undo Mark as Read** brings hidden ones back.
 
 ---
-
-## Adding another service
-
-The UI, window and layout layers know nothing about specific services. To add
-one — Telegram, Slack, Discord, Signal:
-
-**If it has a web app**, add a `WebRecipe` in `Providers/WebRecipes.swift` with
-its URL and an extractor, then a case in `SourceKind`:
-
-```swift
-static let telegram = WebRecipe(
-    kind: .telegram,
-    descriptor: SourceDescriptor(id: "telegram", name: "Telegram",
-                                 glyph: .symbol("paperplane.fill"),
-                                 // colours are blended as drifting blobs; base
-                                 // fills the gaps, glow is the outer bloom
-                                 accent: Accent(colors: [...], base: ..., glow: ...),
-                                 // clicking prefers the app, falling back to
-                                 // the URL; use nil to always open the browser
-                                 openURL: URL(string: "https://web.telegram.org/"),
-                                 openBundleID: "ru.keepcoder.Telegram"),
-    trackingURL: URL(string: "https://web.telegram.org/a/")!,
-    loginURL: URL(string: "https://web.telegram.org/a/")!,
-    defaultExtractor: telegramExtractor)
-```
-
-**If it is a Mac app that badges its Dock icon**, a `DockRecipe` is the whole
-job — `DockBadgeSource` reads the badge off any tile via the accessibility API:
-
-```swift
-static let slackDock = DockRecipe(
-    descriptor: SourceDescriptor(id: "slack", name: "Slack", ...),
-    tileTitles: ["Slack"])
-```
-
-**Anything else** conforms to `NotificationSource` — five methods and a
-`SourceDescriptor`. Register it in `SourceFactory.make` and it appears in
-Settings, in the cluster, and in the menu automatically.
 
 ## Layout
 
 ```
 Sources/Notifly/
-  Core/        SourceState, NotificationSource, NotificationHub, Preferences
-  Providers/   WebSource (+ recipes), MessagesSource, DockBadgeSource
+  Core/        InstagramFeed (model), NotiflyModel (counts, watermarks), Preferences
+  Providers/   InstagramSource (session + polling), InstagramScript (the JS)
   App/         panel, notch geometry, cursor tracking, status item, windows
-  UI/          magnification maths, the dot, the cluster, theme, settings
+  UI/          dot, hover card, colour field, geometry, theme, settings
 ```
 
 ## Known limits
 
-- The dots sit in the strip where the frontmost app draws its menus. Clicks pass
-  through, but a long menu will overlap them. Move them with **Appearance →
-  Distance from notch**, or park them on the right of the notch instead.
-- WhatsApp Web can be picky about non-Safari browsers. Notifly presents a Safari
-  user agent; if it still refuses, use the Dock badge mode instead.
-- Rebuilding invalidates the ad-hoc signature and therefore Full Disk Access.
-- Instagram counts conversations with unread messages, not individual messages —
-  that is what the site itself reports.
-- Setting **Maximum scale** to 1× disables magnification entirely; that is the
-  slider's left end, not a bug.
+- The dot sits where the frontmost app draws its menus. Clicks pass through, but
+  a long menu will overlap it — move it with **Appearance → Distance from
+  notch**, or use hidden mode.
+- Instagram counts unread *conversations*, not individual messages. That is what
+  the site itself reports.
+- These are private endpoints. They can change without warning; when they do the
+  probe above is how you find out what changed.
+- Rebuilding changes the ad-hoc signature, so macOS treats it as a new app.

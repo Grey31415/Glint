@@ -4,11 +4,11 @@ import SwiftUI
 @MainActor
 final class SettingsWindowController {
     private var window: NSWindow?
-    private let hub: NotificationHub
+    private let model: NotiflyModel
     private let preferences: Preferences
 
-    init(hub: NotificationHub, preferences: Preferences) {
-        self.hub = hub
+    init(model: NotiflyModel, preferences: Preferences) {
+        self.model = model
         self.preferences = preferences
     }
 
@@ -22,13 +22,12 @@ final class SettingsWindowController {
     }
 
     private func build() {
-        let root = SettingsView(hub: hub, prefs: preferences)
-        let hosting = NSHostingController(rootView: root)
+        let hosting = NSHostingController(rootView: SettingsView(model: model, prefs: preferences))
         let window = NSWindow(contentViewController: hosting)
         window.title = "Notifly"
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 580, height: 500))
+        window.setContentSize(NSSize(width: 580, height: 540))
         self.window = window
     }
 }

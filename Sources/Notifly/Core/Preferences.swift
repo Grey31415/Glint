@@ -3,19 +3,11 @@ import Combine
 import ServiceManagement
 import SwiftUI
 
-/// Where the cluster docks relative to the notch.
+/// Where the dot docks relative to the notch.
 enum DockSide: String, CaseIterable, Identifiable {
     case left, right
     var id: String { rawValue }
     var label: String { self == .left ? "Left of notch" : "Right of notch" }
-}
-
-/// How WhatsApp counts are obtained.
-enum WhatsAppMode: String, CaseIterable, Identifiable {
-    case web        // hidden WhatsApp Web session
-    case dockBadge  // read the badge off the desktop app's Dock tile
-    var id: String { rawValue }
-    var label: String { self == .web ? "WhatsApp Web (no app needed)" : "Desktop app Dock badge" }
 }
 
 /// UserDefaults-backed settings. Intentionally *not* actor-isolated: it is only
@@ -25,7 +17,7 @@ final class Preferences: ObservableObject {
     private let defaults = UserDefaults.standard
 
     /// Two-way binding for any settable property, so Settings controls can be
-    /// written as `Toggle("…", isOn: prefs.binding(\.showCountAtRest))`.
+    /// written as `Toggle("…", isOn: prefs.binding(\.hiddenMode))`.
     func binding<T>(_ keyPath: ReferenceWritableKeyPath<Preferences, T>) -> Binding<T> {
         Binding(get: { self[keyPath: keyPath] },
                 set: { self[keyPath: keyPath] = $0 })
@@ -40,28 +32,25 @@ final class Preferences: ObservableObject {
         defaults.set(newValue, forKey: key)
     }
 
-    // MARK: - Which sources are live
+    // MARK: - What counts
 
-    var enabledSourceIDs: Set<String> {
+    /// Which buckets are counted into the dot and shown in the card.
+    var enabledKinds: Set<ActivityKind> {
         get {
-            let raw = defaults.array(forKey: "enabledSources") as? [String]
-            return Set(raw ?? [SourceKind.instagram.rawValue])
+            guard let raw = defaults.array(forKey: "enabledKinds") as? [String] else {
+                return Set(ActivityKind.allCases.filter(\.defaultEnabled))
+            }
+            return Set(raw.compactMap(ActivityKind.init(rawValue:)))
         }
-        set { store("enabledSources", Array(newValue).sorted()) }
+        set { store("enabledKinds", newValue.map(\.rawValue).sorted()) }
     }
 
-    func isEnabled(_ kind: SourceKind) -> Bool { enabledSourceIDs.contains(kind.rawValue) }
+    func isEnabled(_ kind: ActivityKind) -> Bool { enabledKinds.contains(kind) }
 
-    func setEnabled(_ kind: SourceKind, _ on: Bool) {
-        var set = enabledSourceIDs
-        if on { set.insert(kind.rawValue) } else { set.remove(kind.rawValue) }
-        enabledSourceIDs = set
-    }
-
-    /// Display order of the dots, left to right. Unknown ids fall to the end.
-    var sourceOrder: [String] {
-        get { defaults.array(forKey: "sourceOrder") as? [String] ?? SourceKind.allCases.map(\.rawValue) }
-        set { store("sourceOrder", newValue) }
+    func setEnabled(_ kind: ActivityKind, _ on: Bool) {
+        var set = enabledKinds
+        if on { set.insert(kind) } else { set.remove(kind) }
+        enabledKinds = set
     }
 
     // MARK: - Placement
@@ -73,11 +62,18 @@ final class Preferences: ObservableObject {
 
     /// Nudge along the menu bar. Positive moves away from the notch.
     var horizontalOffset: Double {
-        get { value("horizontalOffset", 8.0) }
+        get { value("horizontalOffset", 10.0) }
         set { store("horizontalOffset", newValue) }
     }
 
-    // MARK: - Look & feel
+    /// Park the dot inside the notch — a region of the display with no pixels —
+    /// so it is genuinely invisible until the cursor arrives there.
+    var hiddenMode: Bool {
+        get { value("hiddenMode", false) }
+        set { store("hiddenMode", newValue) }
+    }
+
+    // MARK: - Look
 
     var dotSize: Double {
         get { value("dotSize", 15.0) }
@@ -94,27 +90,32 @@ final class Preferences: ObservableObject {
         set { store("influenceRadius", min(max(newValue, 20), 240)) }
     }
 
-    var spacing: Double {
-        get { value("spacing", 8.0) }
-        set { store("spacing", min(max(newValue, 0), 32)) }
-    }
-
-    /// Show the numeral inside the dot even when the mouse is elsewhere.
     var showCountAtRest: Bool {
         get { value("showCountAtRest", true) }
         set { store("showCountAtRest", newValue) }
     }
 
-    /// Slow opacity drift on dots with nothing to report. Costs a little battery.
     var ambientBreathing: Bool {
         get { value("ambientBreathing", false) }
         set { store("ambientBreathing", newValue) }
     }
 
-    /// Hide dots entirely while their count is zero.
+    /// Hide the dot entirely while nothing is waiting.
     var hideWhenEmpty: Bool {
         get { value("hideWhenEmpty", false) }
         set { store("hideWhenEmpty", newValue) }
+    }
+
+    /// Show the detail card on hover. Off means the dot is just a number.
+    var showHoverCard: Bool {
+        get { value("showHoverCard", true) }
+        set { store("showHoverCard", newValue) }
+    }
+
+    /// Include the last message text in the card, not just who wrote.
+    var showMessagePreviews: Bool {
+        get { value("showMessagePreviews", true) }
+        set { store("showMessagePreviews", newValue) }
     }
 
     var playSoundOnNew: Bool {
@@ -129,51 +130,22 @@ final class Preferences: ObservableObject {
 
     // MARK: - Polling
 
-    /// Seconds between Swift-driven polls of each source.
     var pollInterval: Double {
-        get { value("pollInterval", 5.0) }
-        set { store("pollInterval", min(max(newValue, 2), 120)) }
+        get { value("pollInterval", 15.0) }
+        set { store("pollInterval", min(max(newValue, 5), 300)) }
     }
 
-    /// Minutes between full reloads of the hidden web sessions.
     var webReloadMinutes: Double {
-        get { value("webReloadMinutes", 12.0) }
+        get { value("webReloadMinutes", 20.0) }
         set { store("webReloadMinutes", min(max(newValue, 2), 120)) }
-    }
-
-    // MARK: - Per-source knobs
-
-    /// Ignore unread iMessages older than this, so a forgotten thread from 2019
-    /// does not permanently pin the badge.
-    var messagesLookbackDays: Double {
-        get { value("messagesLookbackDays", 30.0) }
-        set { store("messagesLookbackDays", min(max(newValue, 1), 3650)) }
-    }
-
-    var whatsappMode: WhatsAppMode {
-        get { WhatsAppMode(rawValue: value("whatsappMode", WhatsAppMode.web.rawValue)) ?? .web }
-        set { store("whatsappMode", newValue.rawValue) }
-    }
-
-    /// Optional user-supplied JS body that overrides the built-in extractor.
-    /// Must be a function expression returning `{status, count, method}`.
-    func customExtractor(for kind: SourceKind) -> String? {
-        let s = defaults.string(forKey: "customExtractor.\(kind.rawValue)")?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return (s?.isEmpty ?? true) ? nil : s
-    }
-
-    func setCustomExtractor(_ js: String?, for kind: SourceKind) {
-        store("customExtractor.\(kind.rawValue)", js ?? "")
     }
 
     // MARK: - Mark-as-read watermarks
 
-    /// Per-source "I have seen these" watermark, keyed by source id.
+    /// Per-bucket "I have seen these" watermark, keyed by `ActivityKind`.
     ///
-    /// Written by the hub, which rebuilds its own snapshots straight afterwards,
-    /// so this deliberately skips `objectWillChange` — publishing here would
-    /// make every clamp tear down and rebuild the whole source set.
+    /// Written by the model, which rebuilds straight afterwards, so this
+    /// deliberately skips `objectWillChange`.
     var readBaselines: [String: Int] {
         get { defaults.dictionary(forKey: "readBaselines") as? [String: Int] ?? [:] }
         set { defaults.set(newValue, forKey: "readBaselines") }

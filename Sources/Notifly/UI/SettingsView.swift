@@ -1,205 +1,131 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var hub: NotificationHub
+    @ObservedObject var model: NotiflyModel
     @ObservedObject var prefs: Preferences
 
-    /// Sources publish diagnostics outside the state machine, so nudge the view
-    /// on a slow heartbeat rather than wiring up another publisher chain.
     @State private var tick = Date()
     private let heartbeat = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
         TabView {
-            SourcesTab(hub: hub, prefs: prefs, tick: tick)
-                .tabItem { Label("Sources", systemImage: "dot.radiowaves.left.and.right") }
+            NotificationsTab(model: model, prefs: prefs, tick: tick)
+                .tabItem { Label("Notifications", systemImage: "bell.badge") }
             AppearanceTab(prefs: prefs)
                 .tabItem { Label("Appearance", systemImage: "paintbrush") }
             GeneralTab(prefs: prefs)
                 .tabItem { Label("General", systemImage: "gearshape") }
         }
         .padding(18)
-        .frame(width: 580, height: 500)
+        .frame(width: 580, height: 540)
         .onReceive(heartbeat) { tick = $0 }
     }
 }
 
-// MARK: - Sources
+// MARK: - Notifications
 
-private struct SourcesTab: View {
-    @ObservedObject var hub: NotificationHub
+private struct NotificationsTab: View {
+    @ObservedObject var model: NotiflyModel
     @ObservedObject var prefs: Preferences
     let tick: Date
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                ForEach(SourceKind.allCases) { kind in
-                    SourceRow(kind: kind, hub: hub, prefs: prefs, tick: tick)
-                    if kind != SourceKind.allCases.last { Divider() }
-                }
+                connection
+
+                Text("Count towards the dot")
+                    .font(.headline)
 
                 Text("""
-                Instagram and WhatsApp have no public unread-count API. Notifly keeps a \
-                signed-in session for each loaded in the background and reads the same number \
-                the browser tab shows you — nothing is sent anywhere else.
+                Everything you switch on is added into the single number on the dot, \
+                and listed separately in the hover card.
                 """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.top, 6)
+
+                ForEach(ActivityKind.allCases) { kind in
+                    KindRow(kind: kind, model: model, prefs: prefs)
+                }
+
+                Text("""
+                Reactions are kept apart from messages on purpose. A heart on something \
+                you already sent is not the same as somebody writing to you, and the dot \
+                stays grey unless there is a real message waiting.
+                """)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
             }
             .padding(.trailing, 4)
         }
     }
-}
 
-private struct SourceRow: View {
-    let kind: SourceKind
-    @ObservedObject var hub: NotificationHub
-    @ObservedObject var prefs: Preferences
-    let tick: Date
-
-    @State private var showExtractor = false
-    @State private var draftExtractor = ""
-
-    private var source: (any NotificationSource)? { hub.source(for: kind.rawValue) }
-    private var snapshot: SourceSnapshot? { hub.snapshots.first { $0.id == kind.rawValue } }
-    private var enabled: Bool { prefs.isEnabled(kind) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
-                Toggle("", isOn: Binding(get: { prefs.isEnabled(kind) },
-                                         set: { prefs.setEnabled(kind, $0) }))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(kind.displayName).font(.headline)
-                    Text(kind.mechanism).font(.caption).foregroundStyle(.secondary)
+    private var connection: some View {
+        GroupBox {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.state.summary).font(.subheadline).bold()
+                    Text(model.source.diagnostics)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    if let last = model.source.lastUpdate {
+                        Text("Updated \(RelativeTime.string(for: last)) ago")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
                 Spacer()
-                if enabled, let source {
-                    StatusPill(state: source.state)
-                }
-            }
-
-            if enabled, let source {
-                Text(source.diagnostics)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-
-                HStack(spacing: 8) {
-                    if let remedy = source.remedy {
+                VStack(spacing: 6) {
+                    if let remedy = model.source.remedy {
                         Button(remedy.title) { remedy.perform() }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
-                    }
-                    if let web = source as? WebSource, source.remedy == nil {
-                        Button("Sign in…") { web.presentLogin() }
+                    } else {
+                        Button("Sign in…") { model.source.presentLogin() }
                             .controlSize(.small)
                     }
-                    Button("Refresh") { source.refresh() }
-                        .controlSize(.small)
-                    if let snapshot, snapshot.displayCount > 0 {
-                        Button("Mark as read") { hub.markRead(kind.rawValue) }
-                            .controlSize(.small)
-                    }
-                    if let snapshot, snapshot.suppressed > 0 {
-                        Button("Unhide \(snapshot.suppressed)") { hub.clearReadMarks() }
-                            .controlSize(.small)
-                    }
+                    Button("Refresh") { model.refresh() }.controlSize(.small)
                 }
             }
-
-            options
-        }
-    }
-
-    @ViewBuilder
-    private var options: some View {
-        switch kind {
-        case .whatsapp:
-            if enabled {
-                Picker("Read from", selection: prefs.binding(\.whatsappMode)) {
-                    ForEach(WhatsAppMode.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.radioGroup)
-                .font(.caption)
-                extractorEditor
-            }
-        case .imessage:
-            if enabled {
-                HStack {
-                    Text("Ignore unread older than").font(.caption)
-                    Stepper(value: prefs.binding(\.messagesLookbackDays), in: 1...3650, step: 1) {
-                        Text("\(Int(prefs.messagesLookbackDays)) days").font(.caption).monospacedDigit()
-                    }
-                    .labelsHidden()
-                    Text("\(Int(prefs.messagesLookbackDays)) days").font(.caption).monospacedDigit()
-                }
-            }
-        case .instagram:
-            if enabled { extractorEditor }
-        }
-    }
-
-    /// Escape hatch: when a site changes its markup, the fix is a few lines of
-    /// JavaScript here rather than a new build.
-    @ViewBuilder
-    private var extractorEditor: some View {
-        if kind == .instagram || (kind == .whatsapp && prefs.whatsappMode == .web) {
-            DisclosureGroup("Custom extractor (advanced)", isExpanded: $showExtractor) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("A JavaScript function expression returning { status, count, method }. Leave empty to use the built-in one.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    TextEditor(text: $draftExtractor)
-                        .font(.system(size: 11, design: .monospaced))
-                        .frame(height: 110)
-                        .border(Color.secondary.opacity(0.3))
-                    HStack {
-                        Button("Save") {
-                            prefs.setCustomExtractor(draftExtractor, for: kind)
-                            hub.source(for: kind.rawValue)?.refresh()
-                        }
-                        .controlSize(.small)
-                        Button("Reset to built-in") {
-                            draftExtractor = ""
-                            prefs.setCustomExtractor(nil, for: kind)
-                            hub.source(for: kind.rawValue)?.refresh()
-                        }
-                        .controlSize(.small)
-                    }
-                }
-                .padding(.top, 4)
-            }
-            .font(.caption)
-            .onAppear { draftExtractor = prefs.customExtractor(for: kind) ?? "" }
         }
     }
 }
 
-private struct StatusPill: View {
-    let state: SourceState
+private struct KindRow: View {
+    let kind: ActivityKind
+    @ObservedObject var model: NotiflyModel
+    @ObservedObject var prefs: Preferences
 
-    var body: some View {
-        Text(state.summary)
-            .font(.caption)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(tint.opacity(0.18)))
-            .foregroundStyle(tint)
-            .fixedSize()
+    private var summary: KindSummary? {
+        model.summaries.first { $0.kind == kind }
     }
 
-    private var tint: Color {
-        switch state {
-        case .ok(let c): return c > 0 ? .accentColor : .secondary
-        case .needsAuth, .needsPermission: return .orange
-        case .failed: return .red
-        default: return .secondary
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Toggle("", isOn: Binding(get: { prefs.isEnabled(kind) },
+                                     set: { prefs.setEnabled(kind, $0) }))
+                .labelsHidden()
+                .toggleStyle(.switch)
+
+            Image(systemName: kind.symbol)
+                .frame(width: 18)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(kind.title).font(.body)
+                Text(kind.explanation).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let summary, prefs.isEnabled(kind) {
+                Text("\(summary.count)")
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(summary.count > 0 ? .primary : .secondary)
+                if summary.count > 0 {
+                    Button("Mark read") { model.markRead(kind) }.controlSize(.small)
+                }
+            }
         }
     }
 }
@@ -212,24 +138,36 @@ private struct AppearanceTab: View {
     var body: some View {
         Form {
             Section {
+                Toggle("Hidden mode", isOn: prefs.binding(\.hiddenMode))
+                Text("""
+                Parks the dot inside the notch — a part of the display with no pixels — \
+                so it is genuinely invisible. Move the cursor into the notch and it slides \
+                out. For when you would rather not know.
+                """)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Section {
                 Picker("Position", selection: prefs.binding(\.side)) {
                     ForEach(DockSide.allCases) { Text($0.label).tag($0) }
                 }
                 slider("Distance from notch", prefs.binding(\.horizontalOffset), 0...80, "pt")
             }
 
-            Section("Dots") {
+            Section("Dot") {
                 slider("Size", prefs.binding(\.dotSize), 8...22, "pt")
-                slider("Gap", prefs.binding(\.spacing), 0...24, "pt")
                 Toggle("Show the number without hovering", isOn: prefs.binding(\.showCountAtRest))
-                Toggle("Hide a dot while it has nothing to report", isOn: prefs.binding(\.hideWhenEmpty))
-                Toggle("Ambient breathing on quiet dots", isOn: prefs.binding(\.ambientBreathing))
-            }
-
-            Section("Magnification") {
+                Toggle("Hide the dot while nothing is waiting", isOn: prefs.binding(\.hideWhenEmpty))
+                Toggle("Ambient breathing when quiet", isOn: prefs.binding(\.ambientBreathing))
                 slider("Maximum scale", prefs.binding(\.maxScale), 1...3, "×", decimals: 2)
                 slider("Cursor influence", prefs.binding(\.influenceRadius), 20...200, "pt")
-                Text("How far away the cursor starts lifting a dot, and how large it gets directly underneath — the same two numbers the Dock exposes.")
+            }
+
+            Section("Hover card") {
+                Toggle("Show details on hover", isOn: prefs.binding(\.showHoverCard))
+                Toggle("Include message previews", isOn: prefs.binding(\.showMessagePreviews))
+                Text("Previews show the last line of each conversation. Turn them off if you would rather only see who wrote.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -259,8 +197,7 @@ private struct GeneralTab: View {
     @ObservedObject var prefs: Preferences
 
     private var version: String {
-        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        return short ?? "dev"
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "dev"
     }
 
     var body: some View {
@@ -274,23 +211,29 @@ private struct GeneralTab: View {
             Section("Polling") {
                 HStack {
                     Text("Check every")
-                    Slider(value: prefs.binding(\.pollInterval), in: 2...60)
+                    Slider(value: prefs.binding(\.pollInterval), in: 5...120)
                     Text("\(Int(prefs.pollInterval))s")
-                        .monospacedDigit()
-                        .frame(width: 40, alignment: .trailing)
+                        .monospacedDigit().frame(width: 44, alignment: .trailing)
                         .foregroundStyle(.secondary)
                 }
                 HStack {
-                    Text("Reload web sessions every")
-                    Slider(value: prefs.binding(\.webReloadMinutes), in: 2...60)
+                    Text("Reload session every")
+                    Slider(value: prefs.binding(\.webReloadMinutes), in: 5...60)
                     Text("\(Int(prefs.webReloadMinutes))m")
-                        .monospacedDigit()
-                        .frame(width: 40, alignment: .trailing)
+                        .monospacedDigit().frame(width: 44, alignment: .trailing)
                         .foregroundStyle(.secondary)
                 }
-                Text("Faster polling reacts sooner and costs a little more battery. The background pages also push changes the moment they happen, so this is mostly a safety net.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            }
+
+            Section("Privacy") {
+                Text("""
+                Notifly reads your own signed-in instagram.com session, in the background, \
+                on this machine. The same requests the website makes for itself. Nothing is \
+                sent anywhere else and nothing is stored beyond what WebKit keeps for the \
+                session.
+                """)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Section {

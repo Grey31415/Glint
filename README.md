@@ -18,23 +18,6 @@ Built for the case where you deleted the Instagram app but still want to stay in
 touch. The goal is not to surface Instagram faster. It is to make it easy **not**
 to open Instagram and still not miss a friend.
 
-```
-        ┌──────────────────────────────┐
-   ●3 ──│  3 waiting                   │
-        │  2 messages · 1 reaction     │
-        ├──────────────────────────────┤
-        │  (D) Denis            2m     │
-        │      Alte schiffe und so     │
-        │  (B) Beniamin M       14m    │
-        │      Reacted 😂 to your msg  │
-        ├──────────────────────────────┤
-        │  ♥ Likes                 3   │
-        │  ＋ New followers         1   │
-        └──────────────────────────────┘
-```
-
----
-
 ## The idea
 
 A notification badge is only useful if you can trust it. Instagram's cannot be

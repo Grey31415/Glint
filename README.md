@@ -6,7 +6,7 @@
   <img src="Assets/glint_black.png" alt="Glint" width="190">
 </picture>
 
-**Stay in the loop without getting lost**
+**Stay in the loop without loosing focus**
 
 </div>
 

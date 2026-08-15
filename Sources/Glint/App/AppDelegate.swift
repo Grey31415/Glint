@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: OverlayController!
     private var statusItem: StatusItemController!
     private var settings: SettingsWindowController?
+    private var welcome: WelcomeWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         model = GlintModel(preferences: preferences)
@@ -26,12 +27,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.start()
         statusItem.start()
 
-        // Nothing is connected on a fresh install, so open Settings rather than
-        // leaving a single grey dot with no explanation.
+        // A fresh install explains itself before asking for anything. Glint
+        // wants an Instagram sign-in, which deserves a straight answer about
+        // where the password goes before the field appears.
         let key = "hasLaunchedBefore"
         if !UserDefaults.standard.bool(forKey: key) {
             UserDefaults.standard.set(true, forKey: key)
-            openSettings()
+            showWelcome()
         }
     }
 
@@ -49,6 +51,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay?.stop()
         model?.stop()
         statusItem?.stop()
+    }
+
+    func showWelcome() {
+        welcome = WelcomeWindowController(
+            onConnect: { [weak self] in self?.model.source.presentLogin() },
+            onLater: { [weak self] in self?.openSettings() })
+        welcome?.show()
     }
 
     func openSettings() {

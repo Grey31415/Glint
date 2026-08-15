@@ -1,4 +1,15 @@
-# Glint
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="Assets/glint_black.png">
+  <source media="(prefers-color-scheme: light)" srcset="Assets/glint_white.png">
+  <img src="Assets/glint_black.png" alt="Glint" width="190">
+</picture>
+
+**Know a friend messaged you, without opening Instagram.**
+
+</div>
+
 
 A colour dot beside the notch that tells you when a friend has actually written
 to you — and, on hover, who and what they said.
@@ -99,6 +110,41 @@ WebKit session stored under `~/Library/WebKit/com.grey31415.Glint/`.
   by itself whenever the dot is invisible, so there is always a way back.
 
 ---
+
+## Privacy
+
+Glint asks you to sign in to Instagram, which is a large thing to ask, so here is
+exactly what happens.
+
+**Your password never goes through Glint.** You sign in on Instagram's own page,
+opened in the standard macOS web view — the same WebKit engine Safari uses. The
+credentials go straight to Instagram. Glint cannot read them and does not store
+them.
+
+**The session stays on this Mac.** What is kept is the login cookie, and macOS
+keeps it, in `~/Library/WebKit/com.grey31415.Glint` and `~/Library/HTTPStorages`
+— the same places it keeps Safari's. Glint has no account, no server and nowhere
+to send it.
+
+**It only ever talks to instagram.com.** Two requests, the same ones the website
+makes for itself:
+
+```
+GET /api/v1/direct_v2/inbox/    your conversations
+GET /api/v1/news/inbox/         your activity feed
+```
+
+The replies are parsed on your machine and turned into a number. There is no
+analytics, no telemetry, no crash reporting and no other network destination. You
+can check: `GLINT_DEBUG=1 /Applications/Glint.app/Contents/MacOS/Glint` logs every
+request and reply it makes.
+
+**You can disconnect at any time.** *Settings → Sign out and erase session*
+removes the stored cookies and local storage for the domain. Revoking Glint from
+Instagram's own *Settings → Login activity* works too.
+
+This is explained in the app on first launch, before the sign-in field ever
+appears.
 
 ## How it works
 

@@ -47,8 +47,26 @@ Glint
    automatically on first launch; after that, use the menu bar item or
    right-click the dot.
 
-Glint reads your own signed-in instagram.com session locally. Nothing is
-sent anywhere else.
+Privacy
+-------
+
+Glint asks you to sign in to Instagram. What that means:
+
+  * Your password never goes through Glint. You sign in on Instagram's
+    own page, opened in the standard macOS web view - the same engine
+    Safari uses. The credentials go straight to Instagram.
+
+  * What is kept is the session cookie, and macOS keeps it, under
+    ~/Library/WebKit and ~/Library/HTTPStorages - the same places it
+    keeps Safari's. Glint has no account and no server.
+
+  * Glint only ever talks to instagram.com. It makes the same two
+    requests the site makes for itself - your inbox and your activity
+    feed - and reads the numbers out. No analytics, no telemetry.
+
+  * Settings -> Sign out erases the stored session from this Mac.
+
+The app explains all of this on first launch, before asking for anything.
 TXT
 
 mkdir -p "$DIST"

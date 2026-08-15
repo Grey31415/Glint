@@ -13,7 +13,7 @@ struct SettingsView: View {
                 .tabItem { Label("Notifications", systemImage: "bell.badge") }
             AppearanceTab(prefs: prefs)
                 .tabItem { Label("Appearance", systemImage: "paintbrush") }
-            GeneralTab(prefs: prefs)
+            GeneralTab(model: model, prefs: prefs)
                 .tabItem { Label("General", systemImage: "gearshape") }
         }
         .padding(18)
@@ -160,8 +160,10 @@ private struct AppearanceTab: View {
                 Toggle("Show the number without hovering", isOn: prefs.binding(\.showCountAtRest))
                 Toggle("Hide the dot while nothing is waiting", isOn: prefs.binding(\.hideWhenEmpty))
                 Toggle("Ambient breathing when quiet", isOn: prefs.binding(\.ambientBreathing))
-                slider("Maximum scale", prefs.binding(\.maxScale), 1...3, "×", decimals: 2)
-                slider("Cursor influence", prefs.binding(\.influenceRadius), 20...200, "pt")
+                slider("Hover sensitivity", prefs.binding(\.hoverSensitivity), 6...90, "pt")
+                Text("How close the cursor has to come before the menu opens. Larger reacts from further away.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Hover card") {
@@ -194,6 +196,7 @@ private struct AppearanceTab: View {
 // MARK: - General
 
 private struct GeneralTab: View {
+    @ObservedObject var model: GlintModel
     @ObservedObject var prefs: Preferences
 
     private var version: String {
@@ -226,14 +229,32 @@ private struct GeneralTab: View {
             }
 
             Section("Privacy") {
+                LabeledContent("Password") { Text("Never seen by Glint").foregroundStyle(.secondary) }
+                LabeledContent("Session stored in") {
+                    Text("~/Library/WebKit").foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                LabeledContent("Talks to") {
+                    Text("instagram.com only").foregroundStyle(.secondary)
+                }
                 Text("""
-                Glint reads your own signed-in instagram.com session, in the background, \
-                on this machine. The same requests the website makes for itself. Nothing is \
-                sent anywhere else and nothing is stored beyond what WebKit keeps for the \
-                session.
+                You sign in on Instagram's own page in the standard macOS web view, so your \
+                password goes to Instagram and never through Glint. What is kept is the \
+                session cookie macOS stores for Glint on this Mac — the same way it stores \
+                Safari's. Glint has no account and no server: it makes the same two requests \
+                the website makes for itself and reads the numbers out. No analytics, no \
+                telemetry.
                 """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+                HStack {
+                    Button("Show what Glint is connected to") {
+                        NSWorkspace.shared.open(URL(string: "https://www.instagram.com/accounts/access_tool/")!)
+                    }
+                    .controlSize(.small)
+                    Button("Sign out and erase session") { model.source.signOut() }
+                        .controlSize(.small)
+                }
             }
 
             Section {

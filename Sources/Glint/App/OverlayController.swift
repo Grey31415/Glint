@@ -49,6 +49,16 @@ final class OverlayController: ObservableObject {
     /// Vertical room reserved for the card.
     private let cardMaxHeight: CGFloat = 460
 
+    /// Cursor magnification, no longer user-tunable. The morph superseded it:
+    /// the dot only exists at rest for the moment before it becomes the menu,
+    /// so this just needs to read as the dot noticing the cursor.
+    private let magnifyScale: CGFloat = 1.8
+    /// Kept comfortably beyond the open threshold, so the dot has visibly grown
+    /// by the time the menu unfolds however sensitive the trigger is set.
+    private var magnifyInfluence: CGFloat {
+        max(70, CGFloat(preferences.hoverSensitivity) * 1.6)
+    }
+
     private var panel: OverlayPanel?
     private var bag = Set<AnyCancellable>()
     private var geometry: NotchGeometry?
@@ -132,7 +142,7 @@ final class OverlayController: ObservableObject {
         geometry = geo
 
         let dot = CGFloat(preferences.dotSize)
-        let maxScale = CGFloat(preferences.maxScale)
+        let maxScale = magnifyScale
 
         // Anchor: the notch-side edge the dot docks against, in screen space.
         let revealedAnchor = geo.anchorX(side: preferences.side,
@@ -188,7 +198,7 @@ final class OverlayController: ObservableObject {
         guard let panel, let geo = geometry else { return }
         // In hidden mode the trigger is the notch itself; otherwise it is the
         // region around the dot.
-        let influence = CGFloat(preferences.influenceRadius)
+        let influence = magnifyInfluence
         let triggerMinX: CGFloat
         let triggerMaxX: CGFloat
         if preferences.hiddenMode && !isRevealed {
@@ -233,11 +243,11 @@ final class OverlayController: ObservableObject {
         // Proximity magnification.
         let visible = !preferences.hiddenMode || isRevealed
         let newProgress: CGFloat = (visible && inStrip)
-            ? DotGeometry.falloff(distance: distance, radius: CGFloat(preferences.influenceRadius))
+            ? DotGeometry.falloff(distance: distance, radius: magnifyInfluence)
             : 0
         if abs(newProgress - progress) > 0.001 {
             progress = newProgress
-            scale = 1 + (CGFloat(preferences.maxScale) - 1) * newProgress
+            scale = 1 + (magnifyScale - 1) * newProgress
         }
 
         // Open on the dot, stay open anywhere on the surface, close the instant
@@ -249,7 +259,8 @@ final class OverlayController: ObservableObject {
         // In hidden mode the live region includes the notch, and opening from
         // there would unfold the menu while it was still parked behind the
         // camera housing — which is what made it appear half-eaten by the notch.
-        let overDot = visible && inStrip && distance < max(22, layout.dotSize * scale)
+        let overDot = visible && inStrip
+            && distance < max(CGFloat(preferences.hoverSensitivity), closedRect.width / 2)
         let shouldOpen = preferences.showHoverCard && isDotVisible
             && (overDot || (isCardOpen && live))
         if shouldOpen != isCardOpen {

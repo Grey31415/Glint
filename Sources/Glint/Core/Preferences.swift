@@ -80,14 +80,16 @@ final class Preferences: ObservableObject {
         set { store("dotSize", min(max(newValue, 8), 22)) }
     }
 
-    var maxScale: Double {
-        get { value("maxScale", 2.1) }
-        set { store("maxScale", min(max(newValue, 1.0), 3.0)) }
-    }
-
-    var influenceRadius: Double {
-        get { value("influenceRadius", 84.0) }
-        set { store("influenceRadius", min(max(newValue, 20), 240)) }
+    /// How close the cursor must come to the dot before the menu unfolds,
+    /// in points.
+    ///
+    /// This replaced two sliders — maximum magnification and cursor influence —
+    /// that the morph made redundant: the dot is only briefly visible at rest
+    /// before it becomes the menu, so tuning how much it grew first had almost
+    /// no observable effect. Magnification is now a fixed, subtle constant.
+    var hoverSensitivity: Double {
+        get { value("hoverSensitivity", 22.0) }
+        set { store("hoverSensitivity", min(max(newValue, 6), 90)) }
     }
 
     var showCountAtRest: Bool {

@@ -6,6 +6,8 @@
 	<string>en</string>
 	<key>CFBundleExecutable</key>
 	<string>Glint</string>
+	<key>CFBundleIconFile</key>
+	<string>Glint</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.grey31415.Glint</string>
 	<key>CFBundleInfoDictionaryVersion</key>

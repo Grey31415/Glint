@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import WebKit
 
 /// A plain browser window for signing in.
@@ -29,12 +30,24 @@ final class LoginWindowController {
         webView.autoresizingMask = [.width, .height]
         webView.load(URLRequest(url: url))
 
+        // A standing reminder of whose page this is, right where the password
+        // is about to be typed.
+        let bannerHeight: CGFloat = 54
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 680))
+        let banner = NSHostingView(rootView: LoginBanner())
+        banner.frame = NSRect(x: 0, y: 680 - bannerHeight, width: 520, height: bannerHeight)
+        banner.autoresizingMask = [.width, .minYMargin]
+        webView.frame = NSRect(x: 0, y: 0, width: 520, height: 680 - bannerHeight)
+        webView.autoresizingMask = [.width, .height]
+        container.addSubview(webView)
+        container.addSubview(banner)
+
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 680),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered,
                               defer: false)
         window.title = title
-        window.contentView = webView
+        window.contentView = container
         window.isReleasedWhenClosed = false
         window.center()
         self.window = window

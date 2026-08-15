@@ -360,6 +360,28 @@ final class InstagramSource: ObservableObject {
         }
     }
 
+    /// Erases the stored Instagram session from this Mac.
+    ///
+    /// The privacy promise is only worth as much as the ability to undo it, so
+    /// this clears the cookies and local storage WebKit holds for the domain
+    /// rather than merely forgetting them in memory.
+    func signOut(completion: (() -> Void)? = nil) {
+        let store = Self.dataStore
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        store.fetchDataRecords(ofTypes: types) { records in
+            let instagram = records.filter { $0.displayName.localizedCaseInsensitiveContains("instagram") }
+            store.removeData(ofTypes: types, for: instagram) {
+                MainActor.assumeIsolated {
+                    self.state = .needsAuth
+                    self.feed = InstagramFeed()
+                    self.diagnostics = "Signed out — session erased from this Mac"
+                    self.load()
+                    completion?()
+                }
+            }
+        }
+    }
+
     func presentLogin() {
         if let loginWindow { loginWindow.show(); return }
         let controller = LoginWindowController(

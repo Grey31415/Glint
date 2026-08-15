@@ -38,6 +38,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH" "$APP/Contents/MacOS/Glint"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/Resources/Glint.icns" "$APP/Contents/Resources/Glint.icns"
 
 # Ad-hoc signature: enough to run locally. It changes on every build, so macOS
 # treats each rebuild as a new app for permission purposes.

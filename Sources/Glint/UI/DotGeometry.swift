@@ -18,7 +18,6 @@ enum DotGeometry {
     /// SF Rounded Bold advances a touch under 0.62em; erring high keeps text
     /// from ever overflowing the capsule.
     static func digitWidth(height: CGFloat) -> CGFloat { fontSize(height: height) * 0.64 }
-    static func glyphSize(height: CGFloat) -> CGFloat { height * 0.70 }
 
     /// Width of a capsule holding `digits` characters. Also used to size the
     /// colour field, which is why it takes a count rather than a string.
@@ -37,12 +36,12 @@ enum DotGeometry {
         return capsuleWidth(digits: countText.count, height: height)
     }
 
-    /// Unscaled width once the capsule has fully opened to show the mark too.
+    /// Unscaled width under the cursor. With no mark to make room for, a lit
+    /// dot is simply its capsule and a quiet one stays a dot - so hovering
+    /// magnifies without also reflowing the shape.
     static func activeWidth(countText: String, count: Int, height: CGFloat) -> CGFloat {
-        let pad = height * 0.34
-        let glyph = glyphSize(height: height)
-        guard count > 0 else { return pad * 2 + glyph }
-        return pad * 2 + glyph + height * 0.22 + CGFloat(countText.count) * digitWidth(height: height)
+        guard count > 0 else { return height * 0.60 }
+        return capsuleWidth(digits: countText.count, height: height)
     }
 
     static func renderHeight(rest: CGFloat, full: CGFloat, progress: CGFloat, scale: CGFloat) -> CGFloat {

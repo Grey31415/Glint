@@ -24,13 +24,10 @@ struct DotContentView: View {
         ZStack {
             ArrivalRipple(tick: arrivalTick, color: accentGlow)
             statusRing
-            HStack(spacing: dotSize * 0.22 * scale * progress) {
-                if progress > 0.01 {
-                    GlyphView(glyph: .instagram,
-                              size: DotGeometry.glyphSize(height: metric) * progress,
-                              color: .white.opacity(count > 0 ? 0.98 : 0.85))
-                        .opacity(Double(min(1, progress * 1.6)))
-                }
+            // No service mark here. It only appeared mid-hover, which read as
+            // clutter arriving and leaving for no reason; the number alone is
+            // what the dot is for.
+            HStack(spacing: 0) {
                 if showsCount {
                     Text(countText)
                         .font(.system(size: DotGeometry.fontSize(height: metric),

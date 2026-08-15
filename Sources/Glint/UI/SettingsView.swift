@@ -294,7 +294,7 @@ private struct AboutTab: View {
                 .textSelection(.enabled)
                 .padding(.top, 2)
 
-            Text("Stay in the loop without getting lost")
+            Text("stay in the loop. without loosing focus.")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .padding(.top, 12)

@@ -8,139 +8,96 @@
 
 **stay in the loop. without loosing focus.**
 
+### [⬇︎ Download Glint for Mac](https://github.com/Grey31415/Glint/releases/latest/download/Glint.dmg)
+
+<sub>Free · macOS 14 or newer · Apple silicon and Intel</sub>
+
 </div>
 
 <p align="center">
   <img src="Assets/screenshot-dot.jpeg" width="46%" alt="A small glowing dot beside the notch showing two unread messages">
   &nbsp;
-  <img src="Assets/screenshot-menu.jpeg" width="46%" alt="The dot unfolded into a glass menu listing who wrote and what they said">
+  <img src="Assets/screenshot-menu.jpeg" width="46%" alt="The dot unfolded into a menu listing who wrote and what they said">
 </p>
 
-A dot beside the notch that lights up when a friend messages you on Instagram.
-Hover it to see who wrote and what they said. Click to open the conversation.
+## What is it?
 
-Built for people who deleted the app but still want to hear from friends.
+A little dot next to the notch on your Mac. It lights up when someone messages
+you on Instagram. Point at it and you can see who wrote and what they said —
+without opening Instagram and losing twenty minutes.
 
----
+Made for people who deleted the app but still want to hear from their friends.
 
-## What the dot means
+## What the colours mean
 
-**Full colour** — a real message is waiting. **Grey** — only reactions or likes,
-nothing that needs you. **Nothing** — you're clear.
+| | |
+| --- | --- |
+| 🟣 **Colourful** | Someone actually wrote to you |
+| ⚪️ **Grey** | Just likes or reactions — nothing that needs you |
+| **Nothing there** | You're all caught up |
 
-Instagram counts a heart on something you already sent the same as a friend
-asking you a question. Glint doesn't. Reactions get their own bucket and never
-inflate the number.
+Instagram treats a heart on something you posted the same as a friend asking you
+a question. Glint keeps them apart, so the number always means something.
 
-Everything else is off by default and individually switchable: post likes, story
-likes, comments, new followers, tags, message requests. Switch one on and it
-joins the number on the dot and gets its own line in the menu.
+You can also switch on likes, story likes, comments, new followers, tags and
+message requests — each one separately, and all off to begin with.
 
-The menu lists only what is still waiting on you. Read it anywhere — your phone,
-the web — and the row disappears.
+## Installing
 
-**Hidden mode** parks the dot inside the notch, where there are no pixels, so it
-is genuinely invisible until you move the cursor there.
+1. [**Download Glint**](https://github.com/Grey31415/Glint/releases/latest/download/Glint.dmg)
+2. Open the file and drag Glint into your Applications folder
+3. **Right-click Glint → Open → Open**
 
-## Install
+That third step is only needed the first time. macOS shows a warning because
+Glint isn't registered with Apple's paid developer programme — right-clicking
+tells it you're happy to run it anyway.
 
-Download the `.dmg` and drag Glint to Applications.
-
-It is ad-hoc signed rather than notarised, so the first launch is blocked:
-**right-click → Open → Open**, once. Or `xattr -dr com.apple.quarantine
-/Applications/Glint.app`.
-
-```sh
-git clone https://github.com/Grey31415/Glint.git
-cd Glint
-./Scripts/build_app.sh              # ./Glint.app
-UNIVERSAL=1 ./Scripts/make_dmg.sh   # dist/Glint-<version>.dmg
-```
-
-macOS 14+. Sign in once, in-app.
+Then sign in to Instagram once, inside the app, and you're done.
 
 ## Using it
 
 | | |
 | --- | --- |
-| Hover the dot | opens the menu |
-| Click a row | opens that conversation |
-| Click the dot | opens your inbox |
-| Option-click | marks everything read |
-| Right-click | status, settings, quit |
+| **Point at the dot** | See who messaged you |
+| **Click a name** | Opens that conversation |
+| **Click the dot** | Opens your inbox |
+| **⌥ Option-click** | Marks everything as read |
+| **Right-click** | Settings and quit |
 
-The overlay only takes clicks where something is drawn, so the menu bar
-underneath keeps working. The menu bar item is optional — Spotlight-launching
-Glint reopens Settings.
+Anything you've already read disappears from the list, so it only ever shows
+what's actually waiting for you.
 
-## Privacy
+**Want it even quieter?** Turn on *Hidden mode* in Settings and the dot vanishes
+inside the notch completely. Move your cursor there and it slides back out.
 
-**Your password never goes through Glint.** You sign in on Instagram's own page
-in the standard macOS web view, the same engine Safari uses.
+## Is this safe?
 
-**The session stays on this Mac.** macOS keeps the cookie in `~/Library/WebKit`
-and `~/Library/HTTPStorages`, where it keeps Safari's. Glint has no account and
-no server.
+Short answer: yes, and you don't have to take my word for it.
 
-**It only talks to instagram.com** — the same two requests the website makes for
-itself:
+- **Glint never sees your password.** You type it into Instagram's own login
+  page, exactly like you would in Safari.
+- **Nothing leaves your Mac.** Your login is stored by macOS in the same place it
+  keeps Safari's. Glint has no website, no account and no server to send
+  anything to.
+- **It only talks to Instagram.** It asks Instagram the same questions the
+  website asks itself, and reads the answer. No tracking, no analytics.
+- **You can undo it any time.** Settings → *Sign out* wipes the saved login off
+  your Mac.
 
-```
-GET /api/v1/direct_v2/inbox/    your conversations
-GET /api/v1/news/inbox/         your activity feed
-```
+The app explains all of this when you first open it, before it asks you for
+anything.
 
-No analytics, no telemetry, no other destination. Check for yourself with
-`GLINT_DEBUG=1 /Applications/Glint.app/Contents/MacOS/Glint`.
+## Something not working?
 
-**Settings → Sign out** erases the stored session. All of this is shown in the
-app on first launch, before the sign-in field appears.
-
----
-
-## How it works
-
-**Reading Instagram.** There is no public unread API, so Glint keeps your
-signed-in session loaded off-screen and runs the site's own requests from inside
-its own page. A thread whose newest entry is `action_log` with `is_reaction_log`
-is somebody reacting to a message you sent — a flag, not a heuristic, so it will
-not rot. Activity is sorted by `notif_name`, which is how story likes stay
-separate from post likes.
-
-**Where the dot goes.** `NSScreen.auxiliaryTopLeftArea` and its twin describe the
-menu bar either side of the camera housing; the gap between them is the notch.
-Displays without one get a 200pt notch invented in the middle.
-
-**The dot and the menu are one surface.** A single shape interpolates between
-them, sharing a fixed anchor on the notch-side edge, so only width, height and
-corner radius change and nothing travels. Real Liquid Glass on macOS 26
-(`glassEffect(_:in:)`), with a material fallback below it.
-
-**The colour field** is soft blobs, one per brand colour, each on its own pair of
-summed sines with irrational frequency ratios — so it keeps rearranging rather
-than looping. The canvas is sized for a four-digit capsule, because one matching
-the current shape runs out from under the tile as soon as the number grows.
-
-**Marking as read** is a local watermark; Instagram will not let anything be
-marked read from outside. It is clamped to the real count, so reading the
-messages properly releases it.
-
-`GLINT_PROBE=1` dumps the taxonomy of both endpoints, `GLINT_DEBUG=1` logs every
-payload. Both exist because guessing at Instagram's shapes is how you ship
-something that silently never works.
-
-## Limits
-
-- The dot sits where the frontmost app draws its menus. Clicks pass through, but
-  a long menu can overlap it — move it in Appearance, or use hidden mode.
-- Instagram counts unread *conversations*, not individual messages.
-- These are private endpoints and can change without warning.
-- Rebuilding changes the ad-hoc signature, so macOS treats it as a new app.
+Open Settings — it shows what Glint is doing and usually says what's wrong. If
+Instagram signed you out, there's a button to sign back in.
 
 ---
 
 <div align="center">
 
 Made in Germany by **Greyson Wiesenack**
+
+<sub>Curious how it works under the hood? → <a href="README_for_nerds.md">README for nerds</a></sub>
 
 </div>

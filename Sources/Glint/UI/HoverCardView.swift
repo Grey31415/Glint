@@ -156,7 +156,11 @@ struct HoverCardView: View {
 
     private var signInPrompt: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Glint needs a signed-in Instagram session.")
+            // Short enough to sit on one line at the menu's minimum width. The
+            // old wording was 240pt of text in 224pt of space, so it depended
+            // on the menu widening to fit it and lost its last word when it
+            // did not.
+            Text("Glint is signed out of Instagram.")
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.textMid)
                 .fixedSize(horizontal: false, vertical: true)

@@ -84,8 +84,12 @@ final class OverlayController: ObservableObject {
     private(set) var measuredCardWidth: CGFloat = HoverCardView.minWidth
 
     /// The width the menu actually opens at.
+    ///
+    /// The measured width is what the contents need exactly, which leaves text
+    /// sitting on the boundary where a fraction of a point of rounding clips
+    /// it. Two points of slack costs nothing and removes the knife edge.
     var cardWidth: CGFloat {
-        min(max(measuredCardWidth, HoverCardView.minWidth), HoverCardView.maxWidth)
+        min(max(measuredCardWidth + 2, HoverCardView.minWidth), HoverCardView.maxWidth)
     }
 
     init(model: GlintModel, preferences: Preferences) {
@@ -353,7 +357,15 @@ final class OverlayController: ObservableObject {
         // Rows arriving must not resize the menu under the cursor, which is why
         // the shape is frozen at all. The reply field is the one thing the user
         // asked for, so it is allowed to change the shape.
-        if needsRefreeze, isCardOpen {
+        guard isCardOpen else { return }
+
+        // Freezing exists so rows arriving cannot resize the menu under the
+        // cursor. It was never meant to clip anything. Growing is always
+        // allowed, shrinking is not: content that outgrows the frozen shape
+        // otherwise falls outside it, which is how the sign-in button ended up
+        // below the bottom edge.
+        let outgrown = (frozenOpen?.height ?? 0) + 0.5 < currentOpenRect().height
+        if needsRefreeze || outgrown {
             needsRefreeze = false
             withAnimation(Motion.card) { frozenOpen = currentOpenRect() }
             updateInterestRect()

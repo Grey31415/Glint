@@ -39,6 +39,15 @@ final class GlintModel: ObservableObject {
             .sink { [weak self] _ in self?.rebuild() }
             .store(in: &bag)
 
+        // `state` and `lastUpdate` read straight through to the source, so a
+        // change in either has to be announced here or nothing observing this
+        // model repaints. Signing out moves the state without touching the
+        // feed, which left the menu showing, and measuring, the wrong contents.
+        source.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &bag)
+
         preferences.objectWillChange
             .debounce(for: .milliseconds(80), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.rebuild() }

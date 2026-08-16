@@ -37,6 +37,7 @@ final class InstagramSource: ObservableObject {
     /// Set once a real instagram.com page has finished loading.
     private var hasLoadedPage = false
     private var hasProbed = false
+    private var hasProbedSend = false
     private var running = false
 
     static let trackingURL = URL(string: "https://www.instagram.com/direct/inbox/")!
@@ -194,6 +195,20 @@ final class InstagramSource: ObservableObject {
         reloadTimer = reload
     }
 
+    /// `GLINT_PROBE_SEND=1`. Reports which send path the site actually routes.
+    func probeSendEndpoints() {
+        guard let webView else { return }
+        webView.callAsyncJavaScript(InstagramScript.probeSendEndpoints,
+                                    arguments: [:],
+                                    in: nil,
+                                    in: .page) { result in
+            switch result {
+            case .success(let value): NSLog("[Glint:sendprobe] %@", (value as? String) ?? "nil")
+            case .failure(let error): NSLog("[Glint:sendprobe] FAILED %@", error.localizedDescription)
+            }
+        }
+    }
+
     // MARK: - Sending
 
     /// Sends one reply. Only ever called from a deliberate press.
@@ -210,8 +225,12 @@ final class InstagramSource: ObservableObject {
 
         let raw: String? = await withCheckedContinuation { continuation in
             webView.callAsyncJavaScript(
-                InstagramScript.sendText,
-                arguments: ["threadID": threadID, "text": trimmed, "dryRun": Self.dryRun],
+                InstagramScript.sendTextGraphQL,
+                arguments: ["threadID": threadID,
+                            "text": trimmed,
+                            "dryRun": Self.dryRun,
+                            "docID": InstagramScript.sendDocID,
+                            "friendlyName": InstagramScript.sendFriendlyName],
                 in: nil,
                 in: .page) { result in
                     switch result {
@@ -395,6 +414,15 @@ final class InstagramSource: ObservableObject {
         if hasLoadedPage, ProcessInfo.processInfo.environment["GLINT_PROBE"] == "1", !hasProbed {
             hasProbed = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.probeTaxonomy() }
+        }
+        // GLINT_PROBE_SEND=1 fires one real POST at a thread id that cannot
+        // exist. Nothing can be delivered, and the reply separates a rejected
+        // session from wrong parameters, which a dry run cannot do.
+        if hasLoadedPage, ProcessInfo.processInfo.environment["GLINT_PROBE_SEND"] == "1", !hasProbedSend {
+            hasProbedSend = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                self?.probeSendEndpoints()
+            }
         }
         // Give the SPA a moment to settle before the first read.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.poll() }

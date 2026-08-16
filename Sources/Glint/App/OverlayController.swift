@@ -31,6 +31,13 @@ final class OverlayController: ObservableObject {
     /// menu holds the shape it opened at until it closes; content that outgrows
     /// it scrolls instead of pushing the edges around.
     @Published private(set) var frozenOpen: CGRect?
+    /// Thread the reply field is open on, if any.
+    ///
+    /// Lives here rather than inside the menu because two views need it. The
+    /// visible menu draws the field, and the invisible copy that measures the
+    /// menu's height has to draw it too, or the surface would not grow to make
+    /// room for it.
+    @Published private(set) var composingThreadID: String?
 
     let model: GlintModel
     let preferences: Preferences
@@ -68,6 +75,9 @@ final class OverlayController: ObservableObject {
     private var bag = Set<AnyCancellable>()
     private var geometry: NotchGeometry?
     private var parkWork: DispatchWorkItem?
+    /// Set when the reply field opens or closes, so the next height report
+    /// re-freezes the surface instead of holding the shape it opened at.
+    private var needsRefreeze = false
     /// Measured height of the menu contents; the morph interpolates towards it.
     private(set) var measuredCardHeight: CGFloat = 0
     /// Natural width of the names the menu must show, before clamping.
@@ -283,10 +293,14 @@ final class OverlayController: ObservableObject {
         // In hidden mode the live region includes the notch, and opening from
         // there would unfold the menu while it was still parked behind the
         // camera housing - which is what made it appear half-eaten by the notch.
+        // A half-typed reply must survive a nudge of the mouse, so an open reply
+        // field holds the menu open on its own.
+        let composing = composingThreadID != nil
         let overDot = visible && distance <= CGFloat(preferences.hoverSensitivity)
         let shouldOpen = preferences.showHoverCard && isDotVisible
-            && (overDot || (isCardOpen && live))
+            && (overDot || (isCardOpen && (live || composing)))
         if shouldOpen != isCardOpen {
+            if !shouldOpen, composing { setComposing(nil) }
             frozenOpen = shouldOpen ? currentOpenRect() : nil
             withAnimation(Motion.card) { isCardOpen = shouldOpen }
             updateInterestRect()
@@ -336,6 +350,35 @@ final class OverlayController: ObservableObject {
     func setCardHeight(_ height: CGFloat) {
         guard abs(height - measuredCardHeight) > 0.5 else { return }
         measuredCardHeight = height
+        // Rows arriving must not resize the menu under the cursor, which is why
+        // the shape is frozen at all. The reply field is the one thing the user
+        // asked for, so it is allowed to change the shape.
+        if needsRefreeze, isCardOpen {
+            needsRefreeze = false
+            withAnimation(Motion.card) { frozenOpen = currentOpenRect() }
+            updateInterestRect()
+        }
+    }
+
+    /// Opens or closes the reply field.
+    ///
+    /// Typing needs keyboard focus, and Glint is an accessory app that never
+    /// takes it. So this is the one moment the app activates on purpose, and it
+    /// hands focus straight back when the field closes.
+    func setComposing(_ threadID: String?) {
+        guard composingThreadID != threadID else { return }
+        composingThreadID = threadID
+        needsRefreeze = true
+
+        if threadID != nil {
+            panel?.ignoresMouseEvents = false
+            NSApp.activate(ignoringOtherApps: true)
+            panel?.makeKeyAndOrderFront(nil)
+        } else {
+            panel?.resignKey()
+            NSApp.deactivate()
+        }
+        updateInterestRect()
     }
 
     func setCardWidth(_ width: CGFloat) {
@@ -431,7 +474,9 @@ final class OverlayController: ObservableObject {
     /// underneath stays fully usable the rest of the time.
     private func updateMouseEvents(point: CGPoint?, overDot: Bool) {
         guard let panel else { return }
-        let interactive = (overDot || (isCardOpen && withinLiveRegion(point))) && isDotVisible
+        let interactive = (overDot
+                           || (isCardOpen && withinLiveRegion(point))
+                           || composingThreadID != nil) && isDotVisible
         if panel.ignoresMouseEvents == interactive {
             panel.ignoresMouseEvents = !interactive
         }

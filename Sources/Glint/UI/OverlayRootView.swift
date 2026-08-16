@@ -90,6 +90,8 @@ struct OverlayRootView: View {
                     HoverCardView(model: model,
                                   prefs: prefs,
                                   onOpenSettings: { controller.onOpenSettings?() },
+                                  composing: controller.composingThreadID,
+                                  onCompose: { controller.setComposing($0) },
                                   width: controller.cardWidth)
                 }
                 .onTapGesture { if !controller.isCardOpen { controller.dotTapped() } }
@@ -131,7 +133,10 @@ struct OverlayRootView: View {
     /// copy is laid out continuously and reports its height.
     private var measuringCopy: some View {
         ZStack(alignment: .topLeading) {
+            // Draws the reply field too, or the surface would never make room
+            // for it.
             HoverCardView(model: model, prefs: prefs, onOpenSettings: {},
+                          composing: controller.composingThreadID,
                           measuring: .height, width: controller.cardWidth)
                 .fixedSize(horizontal: false, vertical: true)
                 .background(

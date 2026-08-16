@@ -159,4 +159,9 @@ final class GlintModel: ObservableObject {
     }
 
     func refresh() { source.refresh() }
+
+    /// Replies in an existing thread. The one thing Glint writes.
+    func send(_ text: String, to thread: DirectThread) async -> SendResult {
+        await source.send(text, to: thread.id)
+    }
 }

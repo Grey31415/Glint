@@ -179,6 +179,68 @@ enum InstagramScript {
     return JSON.stringify(out);
     """#
 
+    /// Sends one text message into an existing thread.
+    ///
+    /// The only write Glint performs. Reads mirror requests the page makes for
+    /// itself and are effectively invisible; a POST to the messaging endpoint
+    /// is not, so this stays deliberate and rare. It is never called on a timer
+    /// and never retried automatically.
+    ///
+    /// Takes `threadID`, `text` and `dryRun` from `callAsyncJavaScript`.
+    ///
+    /// Instagram wants the CSRF token from the cookie echoed in a header, and a
+    /// `client_context` UUID it uses to collapse duplicates. Sending the same
+    /// context twice posts one message rather than two, which is what makes a
+    /// failed-looking-but-delivered send safe to leave alone.
+    static let sendText = #"""
+    const csrf = (document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/) || [])[1] || '';
+    if (!csrf) return JSON.stringify({ status: 'auth', detail: 'no csrf token' });
+
+    const H = {
+      'x-ig-app-id': '936619743392459',
+      'x-requested-with': 'XMLHttpRequest',
+      'x-csrftoken': csrf,
+      'content-type': 'application/x-www-form-urlencoded'
+    };
+
+    const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+    const context = uuid();
+
+    const body = new URLSearchParams({
+      action: 'send_item',
+      thread_ids: JSON.stringify([String(threadID)]),
+      text: String(text),
+      client_context: context,
+      mutation_token: context
+    }).toString();
+
+    const endpoint = '/api/v1/direct_v2/threads/broadcast/text/';
+
+    if (dryRun) {
+      return JSON.stringify({ status: 'dry', detail: 'POST ' + endpoint + ' ' + body });
+    }
+
+    try {
+      const r = await fetch(endpoint, {
+        method: 'POST', headers: H, credentials: 'include', body: body
+      });
+      if (r.status === 401 || r.status === 403) return JSON.stringify({ status: 'auth' });
+      const raw = await r.text();
+      if (!r.ok) {
+        return JSON.stringify({ status: 'error', detail: 'HTTP ' + r.status + ' ' + raw.slice(0, 200) });
+      }
+      let parsed = null;
+      try { parsed = JSON.parse(raw); } catch (e) {}
+      if (parsed && parsed.status === 'ok') return JSON.stringify({ status: 'ok' });
+      return JSON.stringify({ status: 'error', detail: raw.slice(0, 200) });
+    } catch (e) {
+      return JSON.stringify({ status: 'error', detail: String((e && e.message) || e) });
+    }
+    """#
+
     /// Cheap logged-out check for the page itself, used before the fetch runs.
     static let authCheck = #"""
     (function () {

@@ -9,6 +9,16 @@ import WebKit
 /// in `InstagramScript`, so Glint runs the same requests from inside the same
 /// page: the cookies come along automatically and the result is exactly what
 /// the site would show. Nothing leaves the machine.
+/// Outcome of a reply. Deliberately not `Bool`: a send that fails because the
+/// session lapsed needs a different answer from one that Instagram refused.
+enum SendResult: Equatable {
+    case sent
+    /// `GLINT_DRY_RUN=1`. The request was built and logged, not sent.
+    case dryRun(String)
+    case needsAuth
+    case failed(String)
+}
+
 @MainActor
 final class InstagramSource: ObservableObject {
     @Published private(set) var feed = InstagramFeed()
@@ -34,6 +44,9 @@ final class InstagramSource: ObservableObject {
     static let activityURL = URL(string: "https://www.instagram.com/accounts/activity/")!
 
     static let debugLogging = ProcessInfo.processInfo.environment["GLINT_DEBUG"] == "1"
+    /// Builds and logs the reply request without sending it. The way to work on
+    /// the send path without putting a real account near an action block.
+    static let dryRun = ProcessInfo.processInfo.environment["GLINT_DRY_RUN"] == "1"
 
     init(preferences: Preferences) {
         self.preferences = preferences
@@ -179,6 +192,54 @@ final class InstagramSource: ObservableObject {
         }
         RunLoop.main.add(reload, forMode: .common)
         reloadTimer = reload
+    }
+
+    // MARK: - Sending
+
+    /// Sends one reply. Only ever called from a deliberate press.
+    func send(_ text: String, to threadID: String) async -> SendResult {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .failed("Nothing to send") }
+        guard let webView, hasLoadedPage,
+              let host = webView.url?.host, host.contains("instagram.com") else {
+            return .failed("Not connected to Instagram")
+        }
+
+        let raw: String? = await withCheckedContinuation { continuation in
+            webView.callAsyncJavaScript(
+                InstagramScript.sendText,
+                arguments: ["threadID": threadID, "text": trimmed, "dryRun": Self.dryRun],
+                in: nil,
+                in: .page) { result in
+                    switch result {
+                    case .success(let value): continuation.resume(returning: value as? String)
+                    case .failure: continuation.resume(returning: nil)
+                    }
+                }
+        }
+
+        guard let raw,
+              let data = raw.data(using: .utf8),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return .failed("No answer from Instagram")
+        }
+        if Self.debugLogging || Self.dryRun { NSLog("[Glint:send] %@", raw) }
+
+        let detail = root["detail"] as? String ?? ""
+        switch root["status"] as? String {
+        case "ok":
+            // Pull the thread list straight away so the row reflects the reply
+            // instead of waiting out the poll interval.
+            refresh()
+            return .sent
+        case "dry":
+            return .dryRun(detail)
+        case "auth":
+            state = .needsAuth
+            return .needsAuth
+        default:
+            return .failed(detail.isEmpty ? "Instagram refused the message" : detail)
+        }
     }
 
     // MARK: - Polling

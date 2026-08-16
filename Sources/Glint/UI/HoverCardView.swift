@@ -16,6 +16,10 @@ struct HoverCardView: View {
     /// invisible copy used to size the morph reported ~65pt however much was in
     /// it, and the menu opened far too short. Measuring the rows directly and
     /// clamping with the same maximum gives the height the real card will take.
+    /// Thread whose reply field is open, owned by the controller so the
+    /// measuring copy draws it too and the menu grows to fit.
+    var composing: String? = nil
+    var onCompose: (String?) -> Void = { _ in }
     var measuring: Measuring = .none
     /// The width this copy lays out at. Ignored while measuring width.
     var width: CGFloat = HoverCardView.minWidth
@@ -73,8 +77,16 @@ struct HoverCardView: View {
             if showsMessages {
                 ForEach(threads) { thread in
                     ThreadRow(thread: thread,
-                              showPreview: prefs.showMessagePreviews && measuring != .width) {
-                        model.open(thread)
+                              showPreview: prefs.showMessagePreviews && measuring != .width,
+                              isComposing: composing == thread.id,
+                              onReply: { onCompose(composing == thread.id ? nil : thread.id) },
+                              onTap: { model.open(thread) })
+
+                    if composing == thread.id {
+                        ReplyComposer(thread: thread,
+                                      measuring: measuring != .none,
+                                      onSend: { text in await model.send(text, to: thread) },
+                                      onClose: { onCompose(nil) })
                     }
                 }
             }
@@ -162,9 +174,16 @@ struct HoverCardView: View {
 
 // MARK: - Rows
 
+/// The row is no longer one big button.
+///
+/// It carries two actions now, opening the conversation and opening the reply
+/// field, and a button inside a button does not behave on macOS. The text takes
+/// a tap gesture and the paper aeroplane stays a real button.
 private struct ThreadRow: View {
     let thread: DirectThread
     let showPreview: Bool
+    let isComposing: Bool
+    let onReply: () -> Void
     let onTap: () -> Void
 
     @State private var hovering = false
@@ -175,41 +194,161 @@ private struct ThreadRow: View {
     private let gutter: CGFloat = 8
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(alignment: .top, spacing: 8) {
-                Circle()
-                    .fill(thread.isUnread ? Accent.instagram.glow : .clear)
-                    .frame(width: gutter, height: gutter)
-                    .padding(.top, 4)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(thread.title)
-                            .font(.system(size: 12.5, weight: thread.isUnread ? .semibold : .regular))
-                            .foregroundStyle(thread.isUnread ? Palette.textHi : Palette.textMid)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        Text(RelativeTime.string(for: thread.date))
-                            .font(.system(size: 10.5).monospacedDigit())
-                            .foregroundStyle(Palette.textLo)
-                    }
-                    if showPreview, !thread.preview.isEmpty {
-                        Text(thread.preview)
-                            .font(.system(size: 11.5))
-                            // A reaction is dimmed and italic: visibly not a
-                            // message, before you even read the words.
-                            .italic(thread.kind == .reaction)
-                            .foregroundStyle(thread.kind == .reaction ? Palette.textLo : Palette.textMid)
-                            .lineLimit(1)
-                    }
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(thread.isUnread ? Accent.instagram.glow : .clear)
+                .frame(width: gutter, height: gutter)
+                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(thread.title)
+                        .font(.system(size: 12.5, weight: thread.isUnread ? .semibold : .regular))
+                        .foregroundStyle(thread.isUnread ? Palette.textHi : Palette.textMid)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text(RelativeTime.string(for: thread.date))
+                        .font(.system(size: 10.5).monospacedDigit())
+                        .foregroundStyle(Palette.textLo)
+                }
+                if showPreview, !thread.preview.isEmpty {
+                    Text(thread.preview)
+                        .font(.system(size: 11.5))
+                        // A reaction is dimmed and italic: visibly not a
+                        // message, before you even read the words.
+                        .italic(thread.kind == .reaction)
+                        .foregroundStyle(thread.kind == .reaction ? Palette.textLo : Palette.textMid)
+                        .lineLimit(1)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-            .background(hovering ? Palette.rowHover : .clear)
             .contentShape(Rectangle())
+            .onTapGesture(perform: onTap)
+
+            ReplyButton(active: isComposing, action: onReply)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(hovering || isComposing ? Palette.rowHover : .clear)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// Only conversations get one. The activity rows underneath are likes,
+/// comments and follows, which have no thread to reply into.
+private struct ReplyButton: View {
+    let active: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: active ? "paperplane.fill" : "paperplane")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(active ? Accent.instagram.glow
+                                        : (hovering ? Palette.textHi : Palette.textLo))
+                .frame(width: 20, height: 18)
+                .background(Capsule().fill(hovering && !active ? Palette.rowHover : .clear))
         }
         .buttonStyle(.plain)
+        .help(active ? "Close reply" : "Reply")
         .onHover { hovering = $0 }
+    }
+}
+
+/// The reply field, unfolded under its row.
+///
+/// One line on purpose. The invisible copy that sizes the menu draws this too,
+/// and it can only report the right height if the field's height cannot depend
+/// on what has been typed into the real one.
+private struct ReplyComposer: View {
+    let thread: DirectThread
+    /// True in the copy that only exists to be measured. It takes the same
+    /// room and must never take focus.
+    let measuring: Bool
+    let onSend: (String) async -> SendResult
+    let onClose: () -> Void
+
+    @State private var draft = ""
+    @State private var sending = false
+    @State private var note: String?
+    @FocusState private var focused: Bool
+
+    private var trimmed: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var canSend: Bool { !trimmed.isEmpty && !sending }
+    private var field: RoundedRectangle { RoundedRectangle(cornerRadius: 11, style: .continuous) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                TextField("Message \(thread.title)", text: $draft)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.textHi)
+                    .focused($focused)
+                    .disabled(sending || measuring)
+                    .onSubmit { if canSend { send() } }
+
+                if sending {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.6)
+                        .frame(width: 18, height: 16)
+                } else {
+                    Button(action: send) {
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(canSend ? Accent.instagram.glow : Palette.textLo)
+                            .frame(width: 18, height: 16)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                    .help("Send")
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .liquidGlass(shape: field,
+                         tint: Accent.instagram.glow.opacity(0.10),
+                         enabled: true)
+            .clipShape(field)
+            .overlay(field.strokeBorder(Palette.rim.opacity(0.22), lineWidth: 0.6))
+
+            if let note {
+                Text(note)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Palette.warning)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.leading, 16)
+        .padding(.bottom, 7)
+        .onExitCommand(perform: onClose)
+        .onAppear { if !measuring { focused = true } }
+    }
+
+    private func send() {
+        let text = trimmed
+        sending = true
+        note = nil
+        Task {
+            let result = await onSend(text)
+            sending = false
+            switch result {
+            case .sent:
+                draft = ""
+                onClose()
+            case .dryRun(let request):
+                draft = ""
+                note = "Dry run. Nothing was sent. \(request.prefix(90))"
+            case .needsAuth:
+                note = "Signed out of Instagram."
+            case .failed(let why):
+                note = why
+            }
+        }
     }
 }
 

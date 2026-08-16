@@ -6,7 +6,7 @@
   <img src="Assets/glint_black.png" alt="Glint" width="190">
 </picture>
 
-**stay in the loop. without loosing focus.**
+**a quieter way to keep up.**
 
 ### [⬇︎ Download Glint for Mac](https://github.com/Grey31415/Glint/releases/latest/download/Glint.dmg)
 

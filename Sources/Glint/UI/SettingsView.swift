@@ -51,9 +51,9 @@ private struct NotificationsTab: View {
                 }
 
                 Text("""
-                Reactions are kept apart from messages on purpose. A heart on something \
-                you already sent is not the same as somebody writing to you, and the dot \
-                stays grey unless there is a real message waiting.
+                Reactions are kept apart from messages on purpose. A heart on something you \
+                sent is not the same as somebody writing to you. The dot stays grey until a \
+                real message is waiting.
                 """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -73,7 +73,7 @@ private struct NotificationsTab: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                     if let last = model.source.lastUpdate {
-                        Text("Updated \(RelativeTime.string(for: last)) ago")
+                        Text("Updated \(RelativeTime.phrase(for: last))")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
@@ -142,9 +142,8 @@ private struct AppearanceTab: View {
             Section {
                 Toggle("Hidden mode", isOn: prefs.binding(\.hiddenMode))
                 Text("""
-                Parks the dot inside the notch - a part of the display with no pixels - \
-                so it is genuinely invisible. Move the cursor into the notch and it slides \
-                out. For when you would rather not know.
+                Parks the dot inside the notch, where the display has no pixels. It is \
+                genuinely invisible. Move the cursor into the notch and it slides out.
                 """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -161,9 +160,19 @@ private struct AppearanceTab: View {
                 slider("Size", prefs.binding(\.dotSize), 8...22, "pt")
                 Toggle("Show the number without hovering", isOn: prefs.binding(\.showCountAtRest))
                 Toggle("Hide the dot while nothing is waiting", isOn: prefs.binding(\.hideWhenEmpty))
-                Toggle("Ambient breathing when quiet", isOn: prefs.binding(\.ambientBreathing))
-                slider("Hover sensitivity", prefs.binding(\.hoverSensitivity), 6...90, "pt")
-                Text("How close the cursor has to come before the menu opens. Larger reacts from further away.")
+                Toggle("Animations", isOn: prefs.binding(\.animations))
+                Text("""
+                The colour drifting inside the dot, the menu unfolding, the glow. \
+                Off means everything lands at once and nothing moves on its own.
+                """)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                slider("Hover sensitivity", prefs.binding(\.hoverSensitivity), 0...90, "pt",
+                       zeroLabel: "Touch")
+                Text("""
+                How close the cursor has to come before the menu opens. Larger reacts from \
+                further away. At the lowest setting the cursor has to land on the dot itself.
+                """)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -171,7 +180,7 @@ private struct AppearanceTab: View {
             Section("Hover card") {
                 Toggle("Show details on hover", isOn: prefs.binding(\.showHoverCard))
                 Toggle("Include message previews", isOn: prefs.binding(\.showMessagePreviews))
-                Text("Previews show the last line of each conversation. Turn them off if you would rather only see who wrote.")
+                Text("Previews show the last line of each conversation. Turn them off to see only who wrote.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -183,15 +192,26 @@ private struct AppearanceTab: View {
                         _ value: Binding<Double>,
                         _ range: ClosedRange<Double>,
                         _ unit: String,
-                        decimals: Int = 0) -> some View {
+                        decimals: Int = 0,
+                        zeroLabel: String? = nil) -> some View {
         HStack {
             Text(title)
             Slider(value: value, in: range)
-            Text(String(format: "%.\(decimals)f\(unit)", value.wrappedValue))
+            Text(readout(value.wrappedValue, unit: unit, decimals: decimals, zeroLabel: zeroLabel))
                 .monospacedDigit()
                 .frame(width: 52, alignment: .trailing)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// "0pt" says nothing about what zero does. Where a slider's bottom end is
+    /// a distinct behaviour rather than less of the same, it gets named.
+    private func readout(_ value: Double,
+                         unit: String,
+                         decimals: Int,
+                         zeroLabel: String?) -> String {
+        if let zeroLabel, value.rounded() == 0 { return zeroLabel }
+        return String(format: "%.\(decimals)f\(unit)", value)
     }
 }
 
@@ -235,12 +255,11 @@ private struct GeneralTab: View {
                     Text("instagram.com only").foregroundStyle(.secondary)
                 }
                 Text("""
-                You sign in on Instagram's own page in the standard macOS web view, so your \
+                You sign in on Instagram's own page, in the standard macOS web view. Your \
                 password goes to Instagram and never through Glint. What is kept is the \
-                session cookie macOS stores for Glint on this Mac - the same way it stores \
-                Safari's. Glint has no account and no server: it makes the same two requests \
-                the website makes for itself and reads the numbers out. No analytics, no \
-                telemetry.
+                session cookie, and macOS keeps it, the same way it keeps Safari's. Glint \
+                has no account and no server. It makes the same two requests the website \
+                makes for itself and reads the numbers out. No analytics. No telemetry.
                 """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -294,7 +313,7 @@ private struct AboutTab: View {
                 .textSelection(.enabled)
                 .padding(.top, 2)
 
-            Text("stay in the loop. without loosing focus.")
+            Text("a quieter way to keep up.")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .padding(.top, 12)

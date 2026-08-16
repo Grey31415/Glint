@@ -8,6 +8,14 @@ struct CardHeightKey: PreferenceKey {
     }
 }
 
+/// Carries the width the menu's names need.
+struct CardWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// Root of the floating panel. There is only ever one surface here: the dot,
 /// which stretches into the menu and back.
 struct OverlayRootView: View {
@@ -27,6 +35,10 @@ struct OverlayRootView: View {
 
     private var accent: Accent { hasSubstance ? .instagram : .quiet }
     private var openAmount: CGFloat { controller.isCardOpen ? 1 : 0 }
+
+    /// The glow only breathes when something is waiting and the user wants
+    /// animation. Otherwise it holds still.
+    private var pulses: Bool { model.total > 0 && prefs.animations }
 
     private var closedRect: CGRect {
         // While the menu is open the dot endpoint is held at rest size. The
@@ -48,7 +60,7 @@ struct OverlayRootView: View {
         return MorphMetrics.openRect(anchorX: layout.anchorX,
                               side: layout.side,
                               closed: closedRect,
-                              cardWidth: HoverCardView.width,
+                              cardWidth: controller.cardWidth,
                               cardHeight: controller.measuredCardHeight)
     }
 
@@ -63,7 +75,8 @@ struct OverlayRootView: View {
                                 side: layout.side,
                                 accent: accent,
                                 isLit: model.total > 0,
-                                glowPhase: glowPhase) {
+                                glowPhase: glowPhase,
+                                animated: prefs.animations) {
                     DotContentView(count: model.total,
                                    state: model.state,
                                    dotSize: layout.dotSize,
@@ -71,11 +84,13 @@ struct OverlayRootView: View {
                                    scale: controller.scale,
                                    showCountAtRest: prefs.showCountAtRest,
                                    arrivalTick: model.arrivalTick,
-                                   accentGlow: accent.glow)
+                                   accentGlow: accent.glow,
+                                   animated: prefs.animations)
                 } menuContent: {
                     HoverCardView(model: model,
                                   prefs: prefs,
-                                  onOpenSettings: { controller.onOpenSettings?() })
+                                  onOpenSettings: { controller.onOpenSettings?() },
+                                  width: controller.cardWidth)
                 }
                 .onTapGesture { if !controller.isCardOpen { controller.dotTapped() } }
                 .transition(.scale(scale: 0.2).combined(with: .opacity))
@@ -88,17 +103,24 @@ struct OverlayRootView: View {
         .animation(Motion.magnify, value: controller.scale)
         .animation(Motion.reveal, value: layout.dotCenterX)
         .animation(Motion.pop, value: model.total)
-        .onChange(of: model.total > 0, initial: true) { _, lit in
-            if lit {
+        .onChange(of: pulses, initial: true) { _, on in
+            if on {
                 withAnimation(.easeInOut(duration: 2.1).repeatForever(autoreverses: true)) {
                     glowPhase = 1
                 }
             } else {
-                withAnimation(.easeOut(duration: 0.3)) { glowPhase = 0 }
+                // A lit dot keeps a steady glow with animation off. It is the
+                // breathing that goes, not the light.
+                withAnimation(Motion.enabled ? .easeOut(duration: 0.3) : nil) {
+                    glowPhase = model.total > 0 ? 0.5 : 0
+                }
             }
         }
         .onPreferenceChange(CardHeightKey.self) { height in
             MainActor.assumeIsolated { controller.setCardHeight(height) }
+        }
+        .onPreferenceChange(CardWidthKey.self) { width in
+            MainActor.assumeIsolated { controller.setCardWidth(width) }
         }
         .contextMenu { menu }
         .ignoresSafeArea()
@@ -108,21 +130,34 @@ struct OverlayRootView: View {
     /// the first morph would have nothing to interpolate towards. An invisible
     /// copy is laid out continuously and reports its height.
     private var measuringCopy: some View {
-        HoverCardView(model: model, prefs: prefs, onOpenSettings: {}, measuring: true)
-            .fixedSize(horizontal: false, vertical: true)
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.preference(key: CardHeightKey.self, value: proxy.size.height)
-                }
-            )
-            .opacity(0)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        ZStack(alignment: .topLeading) {
+            HoverCardView(model: model, prefs: prefs, onOpenSettings: {},
+                          measuring: .height, width: controller.cardWidth)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: CardHeightKey.self, value: proxy.size.height)
+                    }
+                )
+
+            // Height and width are measured separately. Every row is one line,
+            // so height does not depend on width and neither feeds the other.
+            HoverCardView(model: model, prefs: prefs, onOpenSettings: {}, measuring: .width)
+                .fixedSize(horizontal: true, vertical: true)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: CardWidthKey.self, value: proxy.size.width)
+                    }
+                )
+        }
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
     private var menu: some View {
-        Text("Instagram - \(model.state.summary)")
+        Text("Instagram · \(model.state.summary)")
         if model.total > 0 {
             Button("Mark All as Read") { model.markAllRead() }
         }

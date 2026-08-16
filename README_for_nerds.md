@@ -1,5 +1,7 @@
 # Glint, for nerds
 
+*a quieter way to keep up.*
+
 ## Build
 
 ```sh

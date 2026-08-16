@@ -16,9 +16,23 @@ struct HoverCardView: View {
     /// invisible copy used to size the morph reported ~65pt however much was in
     /// it, and the menu opened far too short. Measuring the rows directly and
     /// clamping with the same maximum gives the height the real card will take.
-    var measuring: Bool = false
+    var measuring: Measuring = .none
+    /// The width this copy lays out at. Ignored while measuring width.
+    var width: CGFloat = HoverCardView.minWidth
 
-    static let width: CGFloat = 360
+    enum Measuring: Equatable {
+        case none
+        /// Real height, at the width the menu will use.
+        case height
+        /// Natural width, unconstrained.
+        case width
+    }
+
+    /// The menu opens at `minWidth` and only widens for names that would
+    /// otherwise truncate. Previews never widen it: they are the one thing long
+    /// enough to drag the whole menu open, and clipping one costs nothing.
+    static let minWidth: CGFloat = 252
+    static let maxWidth: CGFloat = 360
     /// Tallest the rows area is allowed to get before it scrolls.
     static let maxRowsHeight: CGFloat = 360
 
@@ -40,16 +54,16 @@ struct HoverCardView: View {
                 signInPrompt
             } else if isEmpty {
                 allClear
-            } else if measuring {
-                rows.frame(maxHeight: Self.maxRowsHeight)
-            } else {
+            } else if measuring == .none {
                 ScrollView { rows }
                     .scrollIndicators(.never)
                     .frame(maxHeight: Self.maxRowsHeight)
                     .scrollBounceBehavior(.basedOnSize)
+            } else {
+                rows.frame(maxHeight: Self.maxRowsHeight)
             }
         }
-        .frame(width: Self.width, alignment: .leading)
+        .frame(width: measuring == .width ? nil : width, alignment: .leading)
         // No background, border or shadow here: this is the *contents* of the
         // morphing surface, which supplies the glass and the shape.
     }
@@ -59,7 +73,7 @@ struct HoverCardView: View {
             if showsMessages {
                 ForEach(threads) { thread in
                     ThreadRow(thread: thread,
-                              showPreview: prefs.showMessagePreviews) {
+                              showPreview: prefs.showMessagePreviews && measuring != .width) {
                         model.open(thread)
                     }
                 }
@@ -282,6 +296,16 @@ private struct MiniButton: View {
 
 /// Compact relative timestamps: "now", "4m", "2h", "3d".
 enum RelativeTime {
+    /// The same clock, phrased to stand in a sentence. "now" reads correctly on
+    /// its own but not with "ago" after it.
+    static func phrase(for date: Date) -> String {
+        switch string(for: date) {
+        case "":    return "never"
+        case "now": return "just now"
+        case let stamp: return "\(stamp) ago"
+        }
+    }
+
     static func string(for date: Date) -> String {
         guard date > .distantPast else { return "" }
         let seconds = Date().timeIntervalSince(date)

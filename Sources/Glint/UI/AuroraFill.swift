@@ -31,26 +31,39 @@ struct AuroraFill: View {
     /// wrong here: overlaps blow out to white and every brand ends up pink.
     private static let blobOpacity: Double = 0.90
 
+    /// Paused drops the `TimelineView` rather than asking it to hold still. Its
+    /// schedule is captured when the view is created, so flipping `paused` on a
+    /// live one is not reliable. Swapping the branch changes the view's
+    /// identity and takes the clock with it.
     var body: some View {
-        TimelineView(.animation(minimumInterval: Self.frameInterval, paused: paused)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            ZStack {
-                accent.base
-                ForEach(Array(accent.colors.enumerated()), id: \.offset) { index, color in
-                    RadialGradient(colors: [color, color.opacity(0.55), color.opacity(0)],
-                                   center: .center,
-                                   startRadius: 0,
-                                   endRadius: side * Self.blobRadius)
-                        .frame(width: side, height: side)
-                        .offset(Self.drift(index: index,
-                                           time: t,
-                                           amplitude: side * Self.driftAmplitude))
-                        .opacity(Self.blobOpacity)
+        Group {
+            if paused {
+                blobs(at: 0)
+            } else {
+                TimelineView(.animation(minimumInterval: Self.frameInterval)) { timeline in
+                    blobs(at: timeline.date.timeIntervalSinceReferenceDate)
                 }
             }
-            .frame(width: side, height: side)
         }
         .allowsHitTesting(false)
+    }
+
+    private func blobs(at t: TimeInterval) -> some View {
+        ZStack {
+            accent.base
+            ForEach(Array(accent.colors.enumerated()), id: \.offset) { index, color in
+                RadialGradient(colors: [color, color.opacity(0.55), color.opacity(0)],
+                               center: .center,
+                               startRadius: 0,
+                               endRadius: side * Self.blobRadius)
+                    .frame(width: side, height: side)
+                    .offset(Self.drift(index: index,
+                                       time: t,
+                                       amplitude: side * Self.driftAmplitude))
+                    .opacity(Self.blobOpacity)
+            }
+        }
+        .frame(width: side, height: side)
     }
 
     /// Bounded, smooth, and non-repeating: a slow carrier plus a faster harmonic

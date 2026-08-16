@@ -186,7 +186,7 @@ enum FeedState: Equatable {
         case .loading:        return "Connecting…"
         case .ready:          return "Connected"
         case .needsAuth:      return "Sign in required"
-        case .failed(let why): return "Error - \(why)"
+        case .failed(let why): return "Error: \(why)"
         }
     }
 }

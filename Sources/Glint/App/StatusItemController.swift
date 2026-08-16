@@ -66,7 +66,7 @@ final class StatusItemController {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let status = NSMenuItem(title: "Instagram - \(model.state.summary)", action: nil, keyEquivalent: "")
+        let status = NSMenuItem(title: "Instagram · \(model.state.summary)", action: nil, keyEquivalent: "")
         status.isEnabled = false
         menu.addItem(status)
 

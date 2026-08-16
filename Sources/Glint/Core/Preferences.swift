@@ -89,7 +89,7 @@ final class Preferences: ObservableObject {
     /// no observable effect. Magnification is now a fixed, subtle constant.
     var hoverSensitivity: Double {
         get { value("hoverSensitivity", 22.0) }
-        set { store("hoverSensitivity", min(max(newValue, 6), 90)) }
+        set { store("hoverSensitivity", min(max(newValue, 0), 90)) }
     }
 
     var showCountAtRest: Bool {
@@ -97,9 +97,19 @@ final class Preferences: ObservableObject {
         set { store("showCountAtRest", newValue) }
     }
 
-    var ambientBreathing: Bool {
-        get { value("ambientBreathing", false) }
-        set { store("ambientBreathing", newValue) }
+    /// Read by `Motion` without an instance, so a static is the simplest thing
+    /// that works. Same key and same default as `animations`.
+    static let animationsKey = "animations"
+
+    static var animationsEnabled: Bool {
+        UserDefaults.standard.object(forKey: animationsKey) as? Bool ?? true
+    }
+
+    /// Every animation in the app. Off means state changes land instantly and
+    /// the colour inside the dot stops drifting.
+    var animations: Bool {
+        get { Self.animationsEnabled }
+        set { store(Self.animationsKey, newValue) }
     }
 
     /// Hide the dot entirely while nothing is waiting.

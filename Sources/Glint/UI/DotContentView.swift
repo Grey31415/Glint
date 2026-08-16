@@ -13,6 +13,7 @@ struct DotContentView: View {
     let showCountAtRest: Bool
     let arrivalTick: Int
     let accentGlow: Color
+    let animated: Bool
 
     /// Reference size every internal metric derives from, so text and mark grow
     /// exactly in step with the capsule instead of being scaled bitmaps.
@@ -22,7 +23,9 @@ struct DotContentView: View {
 
     var body: some View {
         ZStack {
-            ArrivalRipple(tick: arrivalTick, color: accentGlow)
+            if animated {
+                ArrivalRipple(tick: arrivalTick, color: accentGlow)
+            }
             statusRing
             // No service mark here. It only appeared mid-hover, which read as
             // clutter arriving and leaving for no reason; the number alone is
@@ -55,13 +58,22 @@ struct DotContentView: View {
         }
     }
 
+    /// The modifier is dropped entirely rather than handed `active: false`. A
+    /// `repeatForever` animation can outlive the value change meant to end it,
+    /// so the only certain stop is to remove the view that owns it.
+    @ViewBuilder
     private func arc(color: Color, period: Double) -> some View {
-        Circle()
+        let ring = Circle()
             .trim(from: 0, to: 0.3)
             .stroke(color, style: .init(lineWidth: max(1, 1.4 * scale), lineCap: .round))
             .padding(max(0.75, 1.2 * scale))
-            .spin(active: true, period: period)
-            .frame(width: dotSize * scale, height: dotSize * scale)
+
+        if animated {
+            ring.spin(active: true, period: period)
+                .frame(width: dotSize * scale, height: dotSize * scale)
+        } else {
+            ring.frame(width: dotSize * scale, height: dotSize * scale)
+        }
     }
 }
 

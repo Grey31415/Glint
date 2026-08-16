@@ -56,8 +56,13 @@ final class OverlayController: ObservableObject {
     /// Kept comfortably beyond the open threshold, so the dot has visibly grown
     /// by the time the menu unfolds however sensitive the trigger is set.
     private var magnifyInfluence: CGFloat {
-        max(70, CGFloat(preferences.hoverSensitivity) * 1.6)
+        CGFloat(preferences.hoverSensitivity) * 1.6
     }
+
+    /// How far out the cursor is sampled. Deliberately not the influence
+    /// radius: sampling is cheap, and the tracker has to keep noticing the
+    /// cursor arrive even with magnification tuned down to nothing.
+    private var trackingReach: CGFloat { max(70, magnifyInfluence) }
 
     private var panel: OverlayPanel?
     private var bag = Set<AnyCancellable>()
@@ -65,6 +70,13 @@ final class OverlayController: ObservableObject {
     private var parkWork: DispatchWorkItem?
     /// Measured height of the menu contents; the morph interpolates towards it.
     private(set) var measuredCardHeight: CGFloat = 0
+    /// Natural width of the names the menu must show, before clamping.
+    private(set) var measuredCardWidth: CGFloat = HoverCardView.minWidth
+
+    /// The width the menu actually opens at.
+    var cardWidth: CGFloat {
+        min(max(measuredCardWidth, HoverCardView.minWidth), HoverCardView.maxWidth)
+    }
 
     init(model: GlintModel, preferences: Preferences) {
         self.model = model
@@ -155,7 +167,9 @@ final class OverlayController: ObservableObject {
         // inside the notch, the dot revealed beside it, and the card hanging
         // below - which extends *away* from the notch and is far wider than
         // the dot, so it sets the outer edge.
-        let cardWidth = preferences.showHoverCard ? HoverCardView.width : 0
+        // Sized for the widest the menu can get, so the panel never has to
+        // resize as names come and go.
+        let cardWidth = preferences.showHoverCard ? HoverCardView.maxWidth : 0
         let dotHalf = DotGeometry.capsuleWidth(digits: 4, height: dot) * maxScale / 2 + edgeMargin
         let minX: CGFloat
         let maxX: CGFloat
@@ -198,7 +212,7 @@ final class OverlayController: ObservableObject {
         guard let panel, let geo = geometry else { return }
         // In hidden mode the trigger is the notch itself; otherwise it is the
         // region around the dot.
-        let influence = magnifyInfluence
+        let influence = trackingReach
         let triggerMinX: CGFloat
         let triggerMaxX: CGFloat
         if preferences.hiddenMode && !isRevealed {
@@ -214,7 +228,7 @@ final class OverlayController: ObservableObject {
         // into it does not dismiss the thing you are reaching for.
         // Reach below the strip by at least the influence radius, or a large
         // sensitivity would ask about a region the tracker never samples.
-        let reach = max(40, magnifyInfluence)
+        let reach = max(40, trackingReach)
         var rect = CGRect(x: triggerMinX,
                           y: panel.frame.maxY - geo.menuBarHeight - reach,
                           width: triggerMaxX - triggerMinX,
@@ -324,6 +338,11 @@ final class OverlayController: ObservableObject {
         measuredCardHeight = height
     }
 
+    func setCardWidth(_ width: CGFloat) {
+        guard abs(width - measuredCardWidth) > 0.5 else { return }
+        measuredCardWidth = width
+    }
+
     /// The dot as currently drawn, in panel-local coordinates. Same maths the
     /// view uses, so what is clickable is exactly what is on screen.
     private var closedRect: CGRect {
@@ -374,7 +393,7 @@ final class OverlayController: ObservableObject {
         MorphMetrics.openRect(anchorX: layout.anchorX,
                               side: preferences.side,
                               closed: closedRect,
-                              cardWidth: HoverCardView.width,
+                              cardWidth: cardWidth,
                               cardHeight: measuredCardHeight > 0 ? measuredCardHeight : 200)
     }
 

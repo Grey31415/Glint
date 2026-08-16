@@ -31,6 +31,8 @@ cat > "$STAGE/READ ME FIRST.txt" <<'TXT'
 Glint
 =======
 
+a quieter way to keep up.
+
 1. Drag Glint onto Applications.
 
 2. Open Glint. macOS will say it could not verify the app - click Done.

@@ -83,16 +83,24 @@ struct Accent: Equatable {
 }
 
 /// Shared spring vocabulary. One place to retune the whole feel.
+/// Every spring is optional. With animations switched off they all go nil and
+/// SwiftUI applies the change on the spot.
 enum Motion {
-    static let magnify = Animation.interpolatingSpring(stiffness: 420, damping: 30)
-    static let pop = Animation.spring(response: 0.42, dampingFraction: 0.58)
+    static var enabled: Bool { Preferences.animationsEnabled }
+
+    static var magnify: Animation? { gated(.interpolatingSpring(stiffness: 420, damping: 30)) }
+    static var pop: Animation? { gated(.spring(response: 0.42, dampingFraction: 0.58)) }
     /// Dot sliding out from behind the notch in hidden mode.
-    static let reveal = Animation.spring(response: 0.40, dampingFraction: 0.78)
+    static var reveal: Animation? { gated(.spring(response: 0.40, dampingFraction: 0.78)) }
     /// Hover card opening and closing.
-    static let card = Animation.spring(response: 0.34, dampingFraction: 0.82)
+    static var card: Animation? { gated(.spring(response: 0.34, dampingFraction: 0.82)) }
     /// The dot stretching into the menu. Slightly slower and better damped than
     /// a normal pop, because the eye is following a shape change rather than a
     /// thing appearing - overshoot here reads as wobble.
-    static let morph = Animation.spring(response: 0.38, dampingFraction: 0.86)
+    static var morph: Animation? { gated(.spring(response: 0.38, dampingFraction: 0.86)) }
+
+    private static func gated(_ animation: Animation) -> Animation? {
+        enabled ? animation : nil
+    }
 }
 

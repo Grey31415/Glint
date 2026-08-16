@@ -18,6 +18,7 @@ struct MorphingSurface<DotContent: View, MenuContent: View>: View {
     let accent: Accent
     let isLit: Bool
     let glowPhase: CGFloat
+    let animated: Bool
     @ViewBuilder let dotContent: () -> DotContent
     @ViewBuilder let menuContent: () -> MenuContent
 
@@ -85,8 +86,8 @@ struct MorphingSurface<DotContent: View, MenuContent: View>: View {
         Color.clear
             .frame(width: closed.width, height: closed.height)
             .overlay(
-                AuroraFill(accent: accent, side: bloomSide)
-                    .mask(MistyMask(side: bloomSide))
+                AuroraFill(accent: accent, side: bloomSide, paused: !animated)
+                    .mask(MistyMask(side: bloomSide, paused: !animated))
                     .frame(width: bloomSide, height: bloomSide)
             )
             .opacity(1 - 0.25 * Double(t))
@@ -104,6 +105,7 @@ struct MorphingSurface<DotContent: View, MenuContent: View>: View {
 /// moving.
 private struct MistyMask: View {
     let side: CGFloat
+    var paused: Bool = false
 
     /// Sampled cosine falloff - smooth all the way to zero, no visible rim.
     private static let stops: [Gradient.Stop] = {
@@ -115,24 +117,32 @@ private struct MistyMask: View {
         }
     }()
 
+    @ViewBuilder
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            ZStack {
-                ForEach(0..<4, id: \.self) { i in
-                    RadialGradient(gradient: Gradient(stops: Self.stops),
-                                   center: .center,
-                                   startRadius: 0,
-                                   endRadius: side * (0.30 + 0.06 * Double(i % 3)))
-                        .frame(width: side, height: side)
-                        .offset(AuroraFill.drift(index: i + 2,
-                                                 time: t * 0.6,
-                                                 amplitude: side * 0.10))
-                        .blendMode(.plusLighter)
-                }
+        if paused {
+            lobes(at: 0)
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                lobes(at: timeline.date.timeIntervalSinceReferenceDate)
             }
-            .compositingGroup()
         }
+    }
+
+    private func lobes(at t: TimeInterval) -> some View {
+        ZStack {
+            ForEach(0..<4, id: \.self) { i in
+                RadialGradient(gradient: Gradient(stops: Self.stops),
+                               center: .center,
+                               startRadius: 0,
+                               endRadius: side * (0.30 + 0.06 * Double(i % 3)))
+                    .frame(width: side, height: side)
+                    .offset(AuroraFill.drift(index: i + 2,
+                                             time: t * 0.6,
+                                             amplitude: side * 0.10))
+                    .blendMode(.plusLighter)
+            }
+        }
+        .compositingGroup()
     }
 }
 

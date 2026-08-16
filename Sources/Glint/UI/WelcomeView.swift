@@ -35,7 +35,9 @@ struct WelcomeView: View {
                       detail: """
                       Glint makes the same two requests the website makes for itself, your \
                       inbox and your activity feed, and reads the numbers out of the \
-                      replies. No analytics. No telemetry. No other destination.
+                      replies. The one thing it ever sends is a reply you have typed \
+                      yourself, at the moment you press return. No analytics. No \
+                      telemetry. No other destination.
                       """)
 
                 Point(symbol: "xmark.circle",

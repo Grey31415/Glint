@@ -97,6 +97,59 @@ listed beneath it. When Instagram reports nothing new but is still badging a
 category, Glint falls back to its aggregates; the branches are mutually
 exclusive, so nothing double counts.
 
+### Sending a reply
+
+The only write Glint performs. It runs from a keypress, never on a timer, and
+is never retried.
+
+`/api/v1/direct_v2/threads/broadcast/text/` looks like the obvious endpoint and
+is a dead end: it is the mobile private API, not a route the web session has.
+Instagram answers an unrouted path with the app's own HTML and a **200**, so a
+POST there fails while looking like it succeeded. Reads work because
+`/api/v1/direct_v2/inbox/` genuinely is served to web.
+
+The web client sends over Relay instead:
+
+```
+POST /api/graphql
+fb_api_req_friendly_name = IGDirectTextSendMutation
+doc_id                   = 26911679871773184
+variables                = {"ig_thread_igid": "...", "offline_threading_id": "...",
+                            "text": {"sensitive_string_value": "..."},
+                            "send_attribution": "igd_web_chat_tab:in_thread", ...}
+```
+
+Three parts are derived rather than scraped, each checked against a captured
+send:
+
+- **The thread id.** The inbox hands back 128-bit ids and the mutation wants the
+  low 64 bits. `340282366841710301244276024561196214941 % 2**64` is
+  `17849543619127965`, exactly the id the real client sent for that thread. The
+  high word is a constant, so this is a local conversion, not a lookup.
+- **`jazoest`.** `"2"` followed by the sum of `fb_dtsg`'s character codes.
+  Reproduces the captured value.
+- **`av`**, the actor id, read out of the `rur` cookie.
+
+`fb_dtsg` and `lsd` are minted per page load and pulled from the bundle payload.
+Several shapes are tried and a miss is named in the error, because a missing
+token is the likeliest way this stops working.
+
+The Relay bundle parameters are left out on purpose. `__dyn`, `__csr`, `__hsdp`,
+`__hblp`, `__spin_*` and the rest are revision and telemetry state rather than
+part of the mutation, and the endpoint accepts the request without them.
+
+**`doc_id` is the maintenance.** It is an opaque server id that rotates with
+Instagram's releases, and when it does, sending fails. It lives in one constant
+beside the friendly name. To recapture it: DevTools, filter on `graphql`, send a
+message, and take the request whose friendly name contains `Send`. Note that
+opening a thread also fires `useIGDMarkThreadAsReadMutation`, which is a
+different mutation and carries no message text.
+
+```sh
+GLINT_DRY_RUN=1    # assemble and log the request, send nothing
+GLINT_PROBE_SEND=1 # run the send path against the first thread on launch
+```
+
 ### Marking as read
 
 Instagram will not let anything be marked read from outside without opening the

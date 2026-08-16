@@ -297,12 +297,13 @@ final class OverlayController: ObservableObject {
         // In hidden mode the live region includes the notch, and opening from
         // there would unfold the menu while it was still parked behind the
         // camera housing - which is what made it appear half-eaten by the notch.
-        // A half-typed reply must survive a nudge of the mouse, so an open reply
-        // field holds the menu open on its own.
+        // An open reply field does not hold the menu open. Leaving with the
+        // cursor closes it and drops the draft, the same as every other way out
+        // of the menu. The field is somewhere to type, not a mode to be in.
         let composing = composingThreadID != nil
         let overDot = visible && distance <= CGFloat(preferences.hoverSensitivity)
         let shouldOpen = preferences.showHoverCard && isDotVisible
-            && (overDot || (isCardOpen && (live || composing)))
+            && (overDot || (isCardOpen && live))
         if shouldOpen != isCardOpen {
             if !shouldOpen, composing { setComposing(nil) }
             frozenOpen = shouldOpen ? currentOpenRect() : nil
@@ -486,9 +487,7 @@ final class OverlayController: ObservableObject {
     /// underneath stays fully usable the rest of the time.
     private func updateMouseEvents(point: CGPoint?, overDot: Bool) {
         guard let panel else { return }
-        let interactive = (overDot
-                           || (isCardOpen && withinLiveRegion(point))
-                           || composingThreadID != nil) && isDotVisible
+        let interactive = (overDot || (isCardOpen && withinLiveRegion(point))) && isDotVisible
         if panel.ignoresMouseEvents == interactive {
             panel.ignoresMouseEvents = !interactive
         }

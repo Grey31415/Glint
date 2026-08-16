@@ -196,12 +196,20 @@ enum InstagramScript {
     const csrf = (document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/) || [])[1] || '';
     if (!csrf) return JSON.stringify({ status: 'auth', detail: 'no csrf token' });
 
+    // Instagram hands the web client a claim token on first response and wants
+    // it echoed on writes. Reads get away without it. Absent is fine, wrong is
+    // not, so it is only sent when the page actually has one.
+    let claim = '';
+    try { claim = sessionStorage.getItem('www-claim-v2') || ''; } catch (e) {}
+
     const H = {
       'x-ig-app-id': '936619743392459',
       'x-requested-with': 'XMLHttpRequest',
       'x-csrftoken': csrf,
+      'x-instagram-ajax': '1',
       'content-type': 'application/x-www-form-urlencoded'
     };
+    if (claim) H['x-ig-www-claim'] = claim;
 
     const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
       const r = Math.random() * 16 | 0;
@@ -209,35 +217,48 @@ enum InstagramScript {
     });
     const context = uuid();
 
+    // thread_id and thread_ids are both sent because the endpoint has accepted
+    // each spelling at different times and ignores the one it does not want.
+    // offline_threading_id is the client-side id the web app dedupes on.
+    const offline = String(Date.now()) + String(Math.floor(Math.random() * 1000000));
     const body = new URLSearchParams({
       action: 'send_item',
+      thread_id: String(threadID),
       thread_ids: JSON.stringify([String(threadID)]),
       text: String(text),
       client_context: context,
-      mutation_token: context
+      mutation_token: context,
+      offline_threading_id: offline
     }).toString();
 
     const endpoint = '/api/v1/direct_v2/threads/broadcast/text/';
 
     if (dryRun) {
-      return JSON.stringify({ status: 'dry', detail: 'POST ' + endpoint + ' ' + body });
+      return JSON.stringify({
+        status: 'dry',
+        detail: 'POST ' + endpoint + ' claim=' + (claim ? 'yes' : 'no') + ' ' + body
+      });
     }
 
     try {
       const r = await fetch(endpoint, {
         method: 'POST', headers: H, credentials: 'include', body: body
       });
-      if (r.status === 401 || r.status === 403) return JSON.stringify({ status: 'auth' });
       const raw = await r.text();
+      // Everything about a refusal is reported. Guessing at why a write failed
+      // from a status code alone is what makes this endpoint hard to work on.
       if (!r.ok) {
-        return JSON.stringify({ status: 'error', detail: 'HTTP ' + r.status + ' ' + raw.slice(0, 200) });
+        return JSON.stringify({
+          status: (r.status === 401 || r.status === 403) ? 'auth' : 'error',
+          detail: 'HTTP ' + r.status + ' claim=' + (claim ? 'yes' : 'no') + ' ' + raw.slice(0, 400)
+        });
       }
       let parsed = null;
       try { parsed = JSON.parse(raw); } catch (e) {}
       if (parsed && parsed.status === 'ok') return JSON.stringify({ status: 'ok' });
-      return JSON.stringify({ status: 'error', detail: raw.slice(0, 200) });
+      return JSON.stringify({ status: 'error', detail: 'HTTP 200 but ' + raw.slice(0, 400) });
     } catch (e) {
-      return JSON.stringify({ status: 'error', detail: String((e && e.message) || e) });
+      return JSON.stringify({ status: 'error', detail: 'threw: ' + String((e && e.message) || e) });
     }
     """#
 

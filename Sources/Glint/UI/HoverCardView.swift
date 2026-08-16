@@ -76,18 +76,14 @@ struct HoverCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             if showsMessages {
                 ForEach(threads) { thread in
-                    ThreadRow(thread: thread,
-                              showPreview: prefs.showMessagePreviews && measuring != .width,
-                              isComposing: composing == thread.id,
-                              onReply: { onCompose(composing == thread.id ? nil : thread.id) },
-                              onTap: { model.open(thread) })
-
-                    if composing == thread.id {
-                        ReplyComposer(thread: thread,
-                                      measuring: measuring != .none,
-                                      onSend: { text in await model.send(text, to: thread) },
-                                      onClose: { onCompose(nil) })
-                    }
+                    ThreadEntry(thread: thread,
+                                showPreview: prefs.showMessagePreviews && measuring != .width,
+                                isComposing: composing == thread.id,
+                                measuring: measuring != .none,
+                                onReply: { onCompose(composing == thread.id ? nil : thread.id) },
+                                onTap: { model.open(thread) },
+                                onSend: { text in await model.send(text, to: thread) },
+                                onClose: { onCompose(nil) })
                 }
             }
             if !activityRows.isEmpty {
@@ -174,11 +170,48 @@ struct HoverCardView: View {
 
 // MARK: - Rows
 
+/// A conversation and its reply field, as one object.
+///
+/// The highlight belongs here rather than on the row. While the field is open
+/// the two are one target, and lighting only the row above it made the field
+/// look like it belonged to whatever came next.
+private struct ThreadEntry: View {
+    let thread: DirectThread
+    let showPreview: Bool
+    let isComposing: Bool
+    let measuring: Bool
+    let onReply: () -> Void
+    let onTap: () -> Void
+    let onSend: (String) async -> SendResult
+    let onClose: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ThreadRow(thread: thread,
+                      showPreview: showPreview,
+                      isComposing: isComposing,
+                      onReply: onReply,
+                      onTap: onTap)
+
+            if isComposing {
+                ReplyComposer(thread: thread,
+                              measuring: measuring,
+                              onSend: onSend,
+                              onClose: onClose)
+            }
+        }
+        .background(hovering || isComposing ? Palette.rowHover : .clear)
+        .onHover { hovering = $0 }
+    }
+}
+
 /// The row is no longer one big button.
 ///
 /// It carries two actions now, opening the conversation and opening the reply
 /// field, and a button inside a button does not behave on macOS. The text takes
-/// a tap gesture and the paper aeroplane stays a real button.
+/// a tap gesture and the pen stays a real button.
 private struct ThreadRow: View {
     let thread: DirectThread
     let showPreview: Bool
@@ -227,11 +260,12 @@ private struct ThreadRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
-        .background(hovering || isComposing ? Palette.rowHover : .clear)
-        .onHover { hovering = $0 }
     }
 }
 
+/// A pen, because it opens somewhere to write. The aeroplane lives in the
+/// field, where it does the sending.
+///
 /// Only conversations get one. The activity rows underneath are likes,
 /// comments and follows, which have no thread to reply into.
 private struct ReplyButton: View {
@@ -241,8 +275,8 @@ private struct ReplyButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: active ? "paperplane.fill" : "paperplane")
-                .font(.system(size: 11, weight: .semibold))
+            Image(systemName: "pencil")
+                .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(active ? Accent.instagram.glow
                                         : (hovering ? Palette.textHi : Palette.textLo))
                 .frame(width: 20, height: 18)

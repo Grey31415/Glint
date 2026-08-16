@@ -200,9 +200,12 @@ final class InstagramSource: ObservableObject {
     func send(_ text: String, to threadID: String) async -> SendResult {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .failed("Nothing to send") }
-        guard let webView, hasLoadedPage,
-              let host = webView.url?.host, host.contains("instagram.com") else {
-            return .failed("Not connected to Instagram")
+        // Says which precondition failed. "Not connected" on its own sent the
+        // last round of debugging looking in the wrong place.
+        guard let webView else { return .failed("No web view") }
+        guard hasLoadedPage else { return .failed("Page still loading, try again in a moment") }
+        guard let host = webView.url?.host, host.contains("instagram.com") else {
+            return .failed("Page is on \(webView.url?.host ?? "nothing"), not instagram.com")
         }
 
         let raw: String? = await withCheckedContinuation { continuation in
@@ -218,12 +221,15 @@ final class InstagramSource: ObservableObject {
                 }
         }
 
+        // Always logged. One line per deliberate press is not noise, and a
+        // refusal is unreadable without the body Instagram sent back.
+        NSLog("[Glint:send] %@", raw ?? "no result from script")
+
         guard let raw,
               let data = raw.data(using: .utf8),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            return .failed("No answer from Instagram")
+            return .failed("The page could not run the send script")
         }
-        if Self.debugLogging || Self.dryRun { NSLog("[Glint:send] %@", raw) }
 
         let detail = root["detail"] as? String ?? ""
         switch root["status"] as? String {

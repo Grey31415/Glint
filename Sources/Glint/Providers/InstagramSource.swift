@@ -420,8 +420,21 @@ final class InstagramSource: ObservableObject {
         // session from wrong parameters, which a dry run cannot do.
         if hasLoadedPage, ProcessInfo.processInfo.environment["GLINT_PROBE_SEND"] == "1", !hasProbedSend {
             hasProbedSend = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
-                self?.probeSendEndpoints()
+            // Runs the real send path against the first thread in the inbox.
+            // Pair it with GLINT_DRY_RUN=1 and nothing is posted: the request
+            // is assembled, the page tokens are read, and the result says
+            // whether they were found.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self else { return }
+                guard let thread = self.feed.threads.first else {
+                    NSLog("[Glint:sendprobe] no threads loaded yet")
+                    return
+                }
+                Task {
+                    let result = await self.send("glint probe", to: thread.id)
+                    NSLog("[Glint:sendprobe] thread=%@ result=%@",
+                          thread.id, String(describing: result))
+                }
             }
         }
         // Give the SPA a moment to settle before the first read.

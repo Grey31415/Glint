@@ -148,7 +148,7 @@ struct HoverCardView: View {
 
     private var signInPrompt: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Glint needs a signed-in Instagram session.")
+            Text("Glint is signed out of Instagram.")
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.textMid)
                 .fixedSize(horizontal: false, vertical: true)

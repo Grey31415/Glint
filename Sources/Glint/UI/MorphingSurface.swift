@@ -62,9 +62,12 @@ struct MorphingSurface<DotContent: View, MenuContent: View>: View {
         .liquidGlass(shape: shape, tint: accent.glow.opacity(0.20 * Double(t)), enabled: t > 0.02)
         .clipShape(shape)
         .overlay(
+            // Light mode inverts this: a white rim on light glass is no rim at
+            // all, so `Palette.rim` supplies black there and these opacities
+            // multiply down into a hairline rather than a highlight.
             shape.strokeBorder(
-                LinearGradient(colors: [.white.opacity(0.30 + 0.10 * Double(1 - t)),
-                                        .white.opacity(0.06)],
+                LinearGradient(colors: [Palette.rim.opacity(0.30 + 0.10 * Double(1 - t)),
+                                        Palette.rim.opacity(0.06)],
                                startPoint: .top, endPoint: .bottom),
                 lineWidth: 0.6)
         )

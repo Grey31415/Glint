@@ -191,7 +191,7 @@ private struct ThreadRow: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
-            .background(hovering ? Color.white.opacity(0.10) : .clear)
+            .background(hovering ? Palette.rowHover : .clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -231,7 +231,7 @@ private struct ActivityRow: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
-                .background(hovering ? Color.white.opacity(0.10) : .clear)
+                .background(hovering ? Palette.rowHover : .clear)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -272,7 +272,7 @@ private struct MiniButton: View {
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(hovering ? Palette.textHi : Palette.textLo)
                 .frame(width: 20, height: 18)
-                .background(Capsule().fill(Color.white.opacity(hovering ? 0.12 : 0)))
+                .background(Capsule().fill(hovering ? Palette.rowHover : .clear))
         }
         .buttonStyle(.plain)
         .help(help)

@@ -179,6 +179,259 @@ enum InstagramScript {
     return JSON.stringify(out);
     """#
 
+    /// Sends one text message into an existing thread.
+    ///
+    /// The only write Glint performs. Reads mirror requests the page makes for
+    /// itself and are effectively invisible; a POST to the messaging endpoint
+    /// is not, so this stays deliberate and rare. It is never called on a timer
+    /// and never retried automatically.
+    ///
+    /// Takes `threadID`, `text` and `dryRun` from `callAsyncJavaScript`.
+    ///
+    /// Instagram wants the CSRF token from the cookie echoed in a header, and a
+    /// `client_context` UUID it uses to collapse duplicates. Sending the same
+    /// context twice posts one message rather than two, which is what makes a
+    /// failed-looking-but-delivered send safe to leave alone.
+    /// The Relay mutation the web client really uses, captured from a live
+    /// send. `doc_id` is an opaque server id that rotates with Instagram's
+    /// releases, so it is named here in one place and will need recapturing
+    /// when sending starts failing.
+    static let sendDocID = "26911679871773184"
+    static let sendFriendlyName = "IGDirectTextSendMutation"
+
+    static let sendTextGraphQL = #"""
+    // Thread ids come back from the inbox as 128-bit numbers, and the mutation
+    // wants the low 64 bits of one. Verified against a captured send:
+    // 340282366841710301244276024561196214941 % 2^64 = 17849543619127965.
+    const shortThreadID = (long) => {
+      try { return (BigInt(String(long)) % (1n << 64n)).toString(); }
+      catch (e) { return String(long); }
+    };
+
+    const cookie = (name) => (document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)')) || [])[1] || '';
+    const csrf = cookie('csrftoken');
+    if (!csrf) return JSON.stringify({ status: 'auth', detail: 'no csrf cookie' });
+
+    // fb_dtsg and lsd are minted per page load and live in the bundle payload.
+    // Several shapes have been used over the years, so each is tried and the
+    // one that hits is reported, because a missing token is the single most
+    // likely reason this stops working.
+    const html = document.documentElement.innerHTML;
+    const first = (patterns) => {
+      for (const p of patterns) { const m = html.match(p); if (m && m[1]) return m[1]; }
+      return '';
+    };
+    const dtsg = first([/"DTSGInitData",\[\],\{"token":"([^"]+)"/, /"dtsg":\{"token":"([^"]+)"/, /name="fb_dtsg" value="([^"]+)"/]);
+    const lsd  = first([/"LSD",\[\],\{"token":"([^"]+)"/, /name="lsd" value="([^"]+)"/]);
+    // av is the actor id. The rur cookie carries it, with the page as a backup.
+    let av = (cookie('rur').replace(/%2C/g, ',').split(',')[1] || '').replace(/"/g, '');
+    if (!/^\d+$/.test(av)) av = first([/"actorID":"(\d+)"/, /"USER_ID":"(\d+)"/]);
+
+    const missing = [];
+    if (!dtsg) missing.push('fb_dtsg');
+    if (!lsd) missing.push('lsd');
+    if (!av) missing.push('av');
+    if (missing.length) {
+      return JSON.stringify({ status: 'error', detail: 'could not read from page: ' + missing.join(', ') });
+    }
+
+    // jazoest is derived from fb_dtsg, not scraped. Verified against a capture.
+    let sum = 0;
+    for (const ch of dtsg) sum += ch.charCodeAt(0);
+    const jazoest = '2' + sum;
+
+    const offline = String(Math.floor(Math.random() * 9e18) + 1e18);
+    const variables = {
+      ig_thread_igid: shortThreadID(threadID),
+      offline_threading_id: offline,
+      recipient_igids: null,
+      replied_to_client_context: null,
+      replied_to_item_id: null,
+      reply_to_message_id: null,
+      sampled: null,
+      text: { sensitive_string_value: String(text) },
+      mentions: [],
+      mentioned_user_ids: [],
+      commands: null,
+      forwarded_from_thread_id: null,
+      is_forwarded_from_own_message: null,
+      send_attribution: 'igd_web_chat_tab:in_thread'
+    };
+
+    const body = new URLSearchParams({
+      av: av,
+      __d: 'www',
+      __user: '0',
+      __a: '1',
+      __comet_req: '7',
+      fb_dtsg: dtsg,
+      jazoest: jazoest,
+      lsd: lsd,
+      fb_api_caller_class: 'RelayModern',
+      fb_api_req_friendly_name: friendlyName,
+      server_timestamps: 'true',
+      variables: JSON.stringify(variables),
+      doc_id: docID
+    }).toString();
+
+    const H = {
+      'content-type': 'application/x-www-form-urlencoded',
+      'x-csrftoken': csrf,
+      'x-ig-app-id': '936619743392459',
+      'x-fb-lsd': lsd,
+      'x-fb-friendly-name': friendlyName,
+      'x-asbd-id': '359341',
+      'x-ig-max-touch-points': '0'
+    };
+
+    if (dryRun) {
+      return JSON.stringify({
+        status: 'dry',
+        detail: 'POST /api/graphql tokens=[dtsg,lsd,av all found] thread=' +
+                shortThreadID(threadID) + ' ' + body.slice(0, 700)
+      });
+    }
+
+    try {
+      const r = await fetch('/api/graphql', {
+        method: 'POST', headers: H, credentials: 'include', body: body
+      });
+      const raw = await r.text();
+      if (!r.ok) {
+        return JSON.stringify({
+          status: (r.status === 401 || r.status === 403) ? 'auth' : 'error',
+          detail: 'HTTP ' + r.status + ' ' + raw.slice(0, 400)
+        });
+      }
+      let parsed = null;
+      try { parsed = JSON.parse(raw); } catch (e) {}
+      if (!parsed) return JSON.stringify({ status: 'error', detail: 'not JSON: ' + raw.slice(0, 300) });
+      if (parsed.errors) {
+        return JSON.stringify({ status: 'error', detail: JSON.stringify(parsed.errors).slice(0, 400) });
+      }
+      return JSON.stringify({ status: 'ok', detail: JSON.stringify(parsed.data || {}).slice(0, 200) });
+    } catch (e) {
+      return JSON.stringify({ status: 'error', detail: 'threw: ' + String((e && e.message) || e) });
+    }
+    """#
+
+    static let sendText = #"""
+    const csrf = (document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/) || [])[1] || '';
+    if (!csrf) return JSON.stringify({ status: 'auth', detail: 'no csrf token' });
+
+    // Instagram hands the web client a claim token on first response and wants
+    // it echoed on writes. Reads get away without it. Absent is fine, wrong is
+    // not, so it is only sent when the page actually has one.
+    let claim = '';
+    try { claim = sessionStorage.getItem('www-claim-v2') || ''; } catch (e) {}
+
+    const H = {
+      'x-ig-app-id': '936619743392459',
+      'x-requested-with': 'XMLHttpRequest',
+      'x-csrftoken': csrf,
+      'x-instagram-ajax': '1',
+      'content-type': 'application/x-www-form-urlencoded'
+    };
+    if (claim) H['x-ig-www-claim'] = claim;
+
+    const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+    const context = uuid();
+
+    // thread_id and thread_ids are both sent because the endpoint has accepted
+    // each spelling at different times and ignores the one it does not want.
+    // offline_threading_id is the client-side id the web app dedupes on.
+    const offline = String(Date.now()) + String(Math.floor(Math.random() * 1000000));
+    const body = new URLSearchParams({
+      action: 'send_item',
+      thread_id: String(threadID),
+      thread_ids: JSON.stringify([String(threadID)]),
+      text: String(text),
+      client_context: context,
+      mutation_token: context,
+      offline_threading_id: offline
+    }).toString();
+
+    const endpoint = '/api/v1/direct_v2/threads/broadcast/text/';
+
+    if (dryRun) {
+      return JSON.stringify({
+        status: 'dry',
+        detail: 'POST ' + endpoint + ' claim=' + (claim ? 'yes' : 'no') + ' ' + body
+      });
+    }
+
+    try {
+      const r = await fetch(endpoint, {
+        method: 'POST', headers: H, credentials: 'include', body: body
+      });
+      const raw = await r.text();
+      // Everything about a refusal is reported. Guessing at why a write failed
+      // from a status code alone is what makes this endpoint hard to work on.
+      if (!r.ok) {
+        return JSON.stringify({
+          status: (r.status === 401 || r.status === 403) ? 'auth' : 'error',
+          detail: 'HTTP ' + r.status + ' claim=' + (claim ? 'yes' : 'no') + ' ' + raw.slice(0, 400)
+        });
+      }
+      let parsed = null;
+      try { parsed = JSON.parse(raw); } catch (e) {}
+      if (parsed && parsed.status === 'ok') return JSON.stringify({ status: 'ok' });
+      return JSON.stringify({ status: 'error', detail: 'HTTP 200 but ' + raw.slice(0, 400) });
+    } catch (e) {
+      return JSON.stringify({ status: 'error', detail: 'threw: ' + String((e && e.message) || e) });
+    }
+    """#
+
+    /// Asks the site which send path it actually routes.
+    ///
+    /// Instagram answers an unrouted path with the app's own HTML and a 200,
+    /// which is what the first attempt at sending got back. A real endpoint
+    /// answers with JSON even when it refuses, so content type separates
+    /// "wrong address" from "wrong request" without sending anything. Every
+    /// candidate is aimed at thread id 0, which cannot exist.
+    /// GET only. A route that exists refuses a GET with JSON, usually a 405. A
+    /// route that does not exist is answered with the app shell and a 200,
+    /// which is exactly what the send POST got back. Two controls bracket the
+    /// answer: the inbox path Glint already reads, and a path invented here
+    /// that cannot exist. No write is attempted.
+    static let probeSendEndpoints = #"""
+    const csrf = (document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/) || [])[1] || '';
+    let claim = '';
+    try { claim = sessionStorage.getItem('www-claim-v2') || ''; } catch (e) {}
+
+    const H = { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest' };
+
+    const candidates = [
+      '/api/v1/direct_v2/inbox/?limit=1',
+      '/api/v1/direct_v2/threads/broadcast/text/',
+      '/api/v1/direct_v2/threads/broadcast/',
+      '/api/graphql',
+      '/graphql/query',
+      '/api/v1/glint_invented_this_path/'
+    ];
+
+    const out = { csrf: csrf ? 'present' : 'missing', claim: claim ? 'present' : 'missing', tried: [] };
+    for (const path of candidates) {
+      try {
+        const r = await fetch(path, { method: 'GET', headers: H, credentials: 'include' });
+        const raw = await r.text();
+        out.tried.push({
+          path: path,
+          status: r.status,
+          type: (r.headers.get('content-type') || '').split(';')[0],
+          shell: raw.slice(0, 60).toLowerCase().indexOf('<!doctype') >= 0,
+          sample: raw.replace(/\s+/g, ' ').slice(0, 110)
+        });
+      } catch (e) {
+        out.tried.push({ path: path, status: 0, error: String((e && e.message) || e) });
+      }
+    }
+    return JSON.stringify(out);
+    """#
+
     /// Cheap logged-out check for the page itself, used before the fetch runs.
     static let authCheck = #"""
     (function () {

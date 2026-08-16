@@ -9,6 +9,16 @@ import WebKit
 /// in `InstagramScript`, so Glint runs the same requests from inside the same
 /// page: the cookies come along automatically and the result is exactly what
 /// the site would show. Nothing leaves the machine.
+/// Outcome of a reply. Deliberately not `Bool`: a send that fails because the
+/// session lapsed needs a different answer from one that Instagram refused.
+enum SendResult: Equatable {
+    case sent
+    /// `GLINT_DRY_RUN=1`. The request was built and logged, not sent.
+    case dryRun(String)
+    case needsAuth
+    case failed(String)
+}
+
 @MainActor
 final class InstagramSource: ObservableObject {
     @Published private(set) var feed = InstagramFeed()
@@ -27,6 +37,7 @@ final class InstagramSource: ObservableObject {
     /// Set once a real instagram.com page has finished loading.
     private var hasLoadedPage = false
     private var hasProbed = false
+    private var hasProbedSend = false
     private var running = false
 
     static let trackingURL = URL(string: "https://www.instagram.com/direct/inbox/")!
@@ -34,6 +45,9 @@ final class InstagramSource: ObservableObject {
     static let activityURL = URL(string: "https://www.instagram.com/accounts/activity/")!
 
     static let debugLogging = ProcessInfo.processInfo.environment["GLINT_DEBUG"] == "1"
+    /// Builds and logs the reply request without sending it. The way to work on
+    /// the send path without putting a real account near an action block.
+    static let dryRun = ProcessInfo.processInfo.environment["GLINT_DRY_RUN"] == "1"
 
     init(preferences: Preferences) {
         self.preferences = preferences
@@ -179,6 +193,78 @@ final class InstagramSource: ObservableObject {
         }
         RunLoop.main.add(reload, forMode: .common)
         reloadTimer = reload
+    }
+
+    /// `GLINT_PROBE_SEND=1`. Reports which send path the site actually routes.
+    func probeSendEndpoints() {
+        guard let webView else { return }
+        webView.callAsyncJavaScript(InstagramScript.probeSendEndpoints,
+                                    arguments: [:],
+                                    in: nil,
+                                    in: .page) { result in
+            switch result {
+            case .success(let value): NSLog("[Glint:sendprobe] %@", (value as? String) ?? "nil")
+            case .failure(let error): NSLog("[Glint:sendprobe] FAILED %@", error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: - Sending
+
+    /// Sends one reply. Only ever called from a deliberate press.
+    func send(_ text: String, to threadID: String) async -> SendResult {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .failed("Nothing to send") }
+        // Says which precondition failed. "Not connected" on its own sent the
+        // last round of debugging looking in the wrong place.
+        guard let webView else { return .failed("No web view") }
+        guard hasLoadedPage else { return .failed("Page still loading, try again in a moment") }
+        guard let host = webView.url?.host, host.contains("instagram.com") else {
+            return .failed("Page is on \(webView.url?.host ?? "nothing"), not instagram.com")
+        }
+
+        let raw: String? = await withCheckedContinuation { continuation in
+            webView.callAsyncJavaScript(
+                InstagramScript.sendTextGraphQL,
+                arguments: ["threadID": threadID,
+                            "text": trimmed,
+                            "dryRun": Self.dryRun,
+                            "docID": InstagramScript.sendDocID,
+                            "friendlyName": InstagramScript.sendFriendlyName],
+                in: nil,
+                in: .page) { result in
+                    switch result {
+                    case .success(let value): continuation.resume(returning: value as? String)
+                    case .failure: continuation.resume(returning: nil)
+                    }
+                }
+        }
+
+        // Always logged. One line per deliberate press is not noise, and a
+        // refusal is unreadable without the body Instagram sent back.
+        NSLog("[Glint:send] %@", raw ?? "no result from script")
+
+        guard let raw,
+              let data = raw.data(using: .utf8),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return .failed("The page could not run the send script")
+        }
+
+        let detail = root["detail"] as? String ?? ""
+        switch root["status"] as? String {
+        case "ok":
+            // Pull the thread list straight away so the row reflects the reply
+            // instead of waiting out the poll interval.
+            refresh()
+            return .sent
+        case "dry":
+            return .dryRun(detail)
+        case "auth":
+            state = .needsAuth
+            return .needsAuth
+        default:
+            return .failed(detail.isEmpty ? "Instagram refused the message" : detail)
+        }
     }
 
     // MARK: - Polling
@@ -328,6 +414,28 @@ final class InstagramSource: ObservableObject {
         if hasLoadedPage, ProcessInfo.processInfo.environment["GLINT_PROBE"] == "1", !hasProbed {
             hasProbed = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.probeTaxonomy() }
+        }
+        // GLINT_PROBE_SEND=1 fires one real POST at a thread id that cannot
+        // exist. Nothing can be delivered, and the reply separates a rejected
+        // session from wrong parameters, which a dry run cannot do.
+        if hasLoadedPage, ProcessInfo.processInfo.environment["GLINT_PROBE_SEND"] == "1", !hasProbedSend {
+            hasProbedSend = true
+            // Runs the real send path against the first thread in the inbox.
+            // Pair it with GLINT_DRY_RUN=1 and nothing is posted: the request
+            // is assembled, the page tokens are read, and the result says
+            // whether they were found.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self else { return }
+                guard let thread = self.feed.threads.first else {
+                    NSLog("[Glint:sendprobe] no threads loaded yet")
+                    return
+                }
+                Task {
+                    let result = await self.send("glint probe", to: thread.id)
+                    NSLog("[Glint:sendprobe] thread=%@ result=%@",
+                          thread.id, String(describing: result))
+                }
+            }
         }
         // Give the SPA a moment to settle before the first read.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.poll() }

@@ -77,10 +77,16 @@ Then sign in to Instagram once, close the window, and you're done.
 | | |
 | --- | --- |
 | **Point at the dot** | See who messaged you |
+| **Click the pen** | Reply without opening Instagram |
 | **Click a name** | Opens that conversation |
 | **Click the dot** | Opens your inbox |
 | **⌥ Option-click** | Marks everything as read |
 | **Right-click** | Settings and quit |
+
+You can write back from the dot. Point at it, click the pen next to
+whoever messaged you, type, and press return. Only conversations have a
+pen. Likes, comments and new followers do not, because there is nothing
+there to reply to.
 
 Anything you've already read disappears from the list, so it only ever shows
 what's actually waiting for you.
@@ -99,6 +105,8 @@ Short answer: yes, and you don't have to take my word for it.
   anything to.
 - **It only talks to Instagram.** It asks Instagram the same questions the
   website asks itself, and reads the answer. No tracking, no analytics.
+- **It only sends what you type.** Replies go out when you press return, and
+  never otherwise. Glint writes nothing to your account on its own.
 - **You can undo it any time.** Settings → *Sign out* wipes the saved login off
   your Mac.
 

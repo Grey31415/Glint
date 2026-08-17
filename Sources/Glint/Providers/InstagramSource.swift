@@ -39,6 +39,12 @@ final class InstagramSource: ObservableObject {
     private var hasProbed = false
     private var hasProbedSend = false
     private var running = false
+    /// Consecutive failed polls, which set how long to wait before the next one.
+    private var failures = 0
+    /// True while the display is asleep or the screen is locked. Nobody can see
+    /// the dot, so nothing needs fetching.
+    private var dormant = false
+    private var sleepObservers: [NSObjectProtocol] = []
 
     static let trackingURL = URL(string: "https://www.instagram.com/direct/inbox/")!
     static let loginURL = URL(string: "https://www.instagram.com/accounts/login/")!
@@ -63,12 +69,18 @@ final class InstagramSource: ObservableObject {
         buildWebView()
         load()
         startTimers()
+        watchForSleep()
     }
 
     func stop() {
         running = false
         pollTimer?.invalidate(); pollTimer = nil
         reloadTimer?.invalidate(); reloadTimer = nil
+        for observer in sleepObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            DistributedNotificationCenter.default().removeObserver(observer)
+        }
+        sleepObservers = []
         if let webView {
             webView.stopLoading()
             HiddenWebHost.shared.release(webView)
@@ -179,13 +191,85 @@ final class InstagramSource: ObservableObject {
                                 timeoutInterval: 30))
     }
 
-    private func startTimers() {
+    /// How long until the next poll.
+    ///
+    /// The interval the user chose while things are working, and then doubling
+    /// up to eight times it once they are not. A session that has been signed
+    /// out or throttled does not become less signed out for being asked every
+    /// fifteen seconds; it just spends battery and gives Instagram a reason to
+    /// throttle harder.
+    private var pollInterval: TimeInterval {
+        let base = max(preferences.pollInterval, 5)
+        return base * min(pow(2, Double(failures)), 8)
+    }
+
+    /// Restarts the poll timer whenever the gap it should keep has changed.
+    /// Timers do not have a mutable interval, so the interval is expressed by
+    /// replacing them.
+    private func rescheduleIfNeeded(previousFailures: Int) {
+        guard running, failures != previousFailures else { return }
+        // Nothing to reschedule while dormant: waking rebuilds the timer anyway.
+        guard !dormant else { return }
+        startPollTimer()
+    }
+
+    private func startPollTimer() {
         pollTimer?.invalidate()
-        let poll = Timer(timeInterval: max(preferences.pollInterval, 5), repeats: true) { [weak self] _ in
+        let poll = Timer(timeInterval: pollInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.poll() }
         }
         RunLoop.main.add(poll, forMode: .common)
         pollTimer = poll
+    }
+
+    /// Stops polling while nobody can see the dot, and catches up on waking.
+    ///
+    /// Two different notification centres, because macOS reports these in two
+    /// different places: display sleep is a workspace notification, and the lock
+    /// screen is a distributed one that has no constant to name it.
+    private func watchForSleep() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        let distributed = DistributedNotificationCenter.default()
+
+        func on(_ name: Notification.Name, in centre: NotificationCenter, _ body: @escaping @MainActor () -> Void) {
+            sleepObservers.append(centre.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { body() }
+            })
+        }
+        func onDistributed(_ name: String, _ body: @escaping @MainActor () -> Void) {
+            sleepObservers.append(distributed.addObserver(forName: Notification.Name(name),
+                                                          object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { body() }
+            })
+        }
+
+        on(NSWorkspace.screensDidSleepNotification, in: workspace) { [weak self] in self?.goDormant() }
+        on(NSWorkspace.willSleepNotification, in: workspace) { [weak self] in self?.goDormant() }
+        on(NSWorkspace.screensDidWakeNotification, in: workspace) { [weak self] in self?.wake() }
+        on(NSWorkspace.didWakeNotification, in: workspace) { [weak self] in self?.wake() }
+        onDistributed("com.apple.screenIsLocked") { [weak self] in self?.goDormant() }
+        onDistributed("com.apple.screenIsUnlocked") { [weak self] in self?.wake() }
+    }
+
+    private func goDormant() {
+        guard running, !dormant else { return }
+        dormant = true
+        pollTimer?.invalidate(); pollTimer = nil
+        if Self.debugLogging { NSLog("[Glint:poll] dormant") }
+    }
+
+    /// Comes back with one immediate poll rather than waiting out the interval:
+    /// the whole point of looking at the screen again is to see what arrived.
+    private func wake() {
+        guard running, dormant else { return }
+        dormant = false
+        if Self.debugLogging { NSLog("[Glint:poll] awake") }
+        startPollTimer()
+        poll()
+    }
+
+    private func startTimers() {
+        startPollTimer()
 
         reloadTimer?.invalidate()
         let reload = Timer(timeInterval: preferences.webReloadMinutes * 60, repeats: true) { [weak self] _ in
@@ -262,6 +346,11 @@ final class InstagramSource: ObservableObject {
         case "auth":
             state = .needsAuth
             return .needsAuth
+        case "stale":
+            // The one failure with a known cure, so it says so instead of
+            // handing back whatever Instagram happened to answer with.
+            NSLog("[Glint:send] doc_id looks stale: %@", detail)
+            return .failed("Instagram changed its send endpoint. Sending needs a new doc_id.")
         default:
             return .failed(detail.isEmpty ? "Instagram refused the message" : detail)
         }
@@ -270,7 +359,7 @@ final class InstagramSource: ObservableObject {
     // MARK: - Polling
 
     private func poll() {
-        guard running, let webView, !inFlight else { return }
+        guard running, !dormant, let webView, !inFlight else { return }
         // Relative fetches cannot resolve until a real page is loaded - on
         // about:blank they fail with "URL is not valid", which is noise rather
         // than a fault worth showing.
@@ -314,19 +403,26 @@ final class InstagramSource: ObservableObject {
             return
         }
 
+        let previousFailures = failures
+        defer { rescheduleIfNeeded(previousFailures: previousFailures) }
+
         switch root["status"] as? String {
         case "auth":
+            // Signed out counts as a failure for pacing purposes. It cannot fix
+            // itself, and asking faster will not make it.
+            failures = min(failures + 1, 3)
             state = .needsAuth
             diagnostics = "Signed out of Instagram"
             return
         case "error":
+            failures = min(failures + 1, 3)
             let detail = root["detail"] as? String ?? "unknown"
             // Keep the last good feed rather than blanking the dot on a blip.
             if case .ready = state { diagnostics = "Refresh failed: \(detail)" }
             else { state = .failed(detail); diagnostics = detail }
             return
         default:
-            break
+            failures = 0
         }
 
         var next = InstagramFeed()

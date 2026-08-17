@@ -33,7 +33,7 @@ struct OverlayRootView: View {
         model.summaries.contains { $0.count > 0 && ($0.kind == .messages || $0.kind == .comments) }
     }
 
-    private var accent: Accent { hasSubstance ? .instagram : .quiet }
+    private var accent: Accent { hasSubstance ? .current : .around(prefs.quietTint) }
     private var openAmount: CGFloat { controller.isCardOpen ? 1 : 0 }
 
     /// The glow only breathes when something is waiting and the user wants
@@ -76,7 +76,9 @@ struct OverlayRootView: View {
                                 accent: accent,
                                 isLit: model.total > 0,
                                 glowPhase: glowPhase,
-                                animated: prefs.animations) {
+                                animated: prefs.animations,
+                                blooms: prefs.menuGlow,
+                                glassiness: prefs.dotGlassiness / 100) {
                     DotContentView(count: model.total,
                                    state: model.state,
                                    dotSize: layout.dotSize,

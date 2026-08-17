@@ -4,7 +4,7 @@ struct SettingsView: View {
     @ObservedObject var model: GlintModel
     @ObservedObject var prefs: Preferences
 
-    @State private var tab: SettingsTab = .notifications
+    @State private var tab: SettingsTab = .general
     @State private var tick = Date()
     private let heartbeat = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -32,9 +32,9 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: SettingsMetrics.cardSpacing) {
                         switch tab {
-                        case .notifications: NotificationsPane(model: model, prefs: prefs, tick: tick)
+                        case .notifications: NotificationsPane(model: model, prefs: prefs)
                         case .appearance:    AppearancePane(prefs: prefs)
-                        case .general:       GeneralPane(model: model, prefs: prefs)
+                        case .general:       GeneralPane(model: model, prefs: prefs, tick: tick)
                         case .about:         EmptyView()
                         }
                     }
@@ -48,7 +48,7 @@ struct SettingsView: View {
         .background(VibrantBackground().ignoresSafeArea())
         // Controls pick up the app's own colour rather than the system accent,
         // so a switch in here matches the dot outside.
-        .tint(Accent.instagram.glow)
+        .tint(Accent.current.glow)
         .onReceive(heartbeat) { tick = $0 }
     }
 }
@@ -58,10 +58,302 @@ struct SettingsView: View {
 private struct NotificationsPane: View {
     @ObservedObject var model: GlintModel
     @ObservedObject var prefs: Preferences
-    let tick: Date
+
+    /// Four columns at the window's width. Adaptive rather than a fixed count so
+    /// the grid still lays out if the window ever changes size, and a tighter
+    /// gutter than the cards use, because a square this small next to 14pt of
+    /// air reads as a gap with tiles in it.
+    private let columns = [GridItem(.adaptive(minimum: 110), spacing: 10)]
 
     var body: some View {
-        GlassSection {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionLabel("Count towards the dot")
+            Note("""
+            Everything you switch on is added into the single number on the dot, \
+            and listed separately in the menu. Click a tile to switch it.
+            """)
+            .padding(.leading, 2)
+        }
+
+        LazyVGrid(columns: columns, spacing: 10) {
+            ForEach(ActivityKind.allCases) { kind in
+                KindTile(kind: kind, model: model, prefs: prefs)
+            }
+        }
+
+        GlassSection(title: "Conversations") {
+            Toggle("Ignore muted conversations", isOn: prefs.binding(\.ignoreMuted))
+            Toggle("Ignore group chats", isOn: prefs.binding(\.ignoreGroups))
+            if model.totalSuppressed > 0 {
+                Divider().opacity(0.4)
+                HStack {
+                    Text("\(model.totalSuppressed) marked read and hidden")
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button("Show again") { model.clearReadMarks() }.controlSize(.small)
+                }
+            }
+        }
+    }
+}
+
+/// A coloured dot for the connection, the same vocabulary as the dot beside
+/// the notch. Reading a status word is slower than reading a colour.
+private struct StatusLight: View {
+    let state: FeedState
+
+    private var colour: Color {
+        switch state {
+        case .ready:     return Accent.current.glow
+        case .loading:   return Palette.textLo
+        case .needsAuth: return Palette.warning
+        case .failed:    return Palette.warning
+        }
+    }
+
+    var body: some View {
+        Circle()
+            .fill(colour)
+            .frame(width: 8, height: 8)
+            .shadow(color: colour.opacity(0.6), radius: 3)
+    }
+}
+
+/// One notification type, as a tile you press.
+///
+/// This replaced a list of seven rows, each with a switch on the left and a
+/// count on the right. That reads as a form to be worked through, and the state
+/// of a small toggle is something you have to inspect one row at a time. Here on
+/// and off are a colour, so which kinds are live is legible from across the
+/// window without reading a single word.
+///
+/// The whole tile is the control. There is no switch inside it - a button inside
+/// a button does not behave on macOS, and a tile that is a target everywhere
+/// except one corner is worse than one that is a target nowhere.
+private struct KindTile: View {
+    let kind: ActivityKind
+    @ObservedObject var model: GlintModel
+    @ObservedObject var prefs: Preferences
+
+    @State private var hovering = false
+
+    private var on: Bool { prefs.isEnabled(kind) }
+    private var count: Int { model.summaries.first { $0.kind == kind }?.count ?? 0 }
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: SettingsMetrics.cardRadius, style: .continuous)
+    }
+
+    /// Hover is a stronger wash of whatever the tile already is, rather than a
+    /// layer on top: another fill over the glass muddies it, and the lit state
+    /// has to stay clearly lit while the cursor is on it.
+    private var tint: Color {
+        if on { return Accent.current.glow.opacity(hovering ? 0.26 : 0.16) }
+        return hovering ? Palette.rowHover : .clear
+    }
+
+    var body: some View {
+        Button {
+            withAnimation(Motion.card) { prefs.setEnabled(kind, !on) }
+        } label: {
+            // A square reads top to bottom: what it is, then its name, then what
+            // it means. The mark and the count share the top line so the two
+            // things you scan for are never pushed around by the wording.
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: kind.symbol)
+                        .font(.system(size: 15))
+                        .foregroundStyle(on ? Accent.current.glow : Color.secondary)
+                    Spacer(minLength: 0)
+                    if on, count > 0 {
+                        Text("\(count)")
+                            .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1.5)
+                            .background(Capsule().fill(Accent.current.glow))
+                    }
+                }
+                Spacer(minLength: 2)
+                Text(kind.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(on ? Color.primary : .secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(kind.explanation)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .aspectRatio(1, contentMode: .fit)
+            .liquidGlass(shape: shape, tint: tint, enabled: true)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(on ? Accent.current.glow.opacity(0.45)
+                                           : Palette.rim.opacity(0.16),
+                                        lineWidth: on ? 1 : 0.6))
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(on ? "Counted. Click to stop counting these."
+                 : "Not counted. Click to start counting these.")
+    }
+}
+
+// MARK: - Appearance
+
+private struct AppearancePane: View {
+    @ObservedObject var prefs: Preferences
+
+    var body: some View {
+        // Both colours in one place, because the question being answered is the
+        // same one: what colour is the dot, waiting or not.
+        GlassSection(title: "Colours") {
+            SettingColour(title: "Accent colour",
+                          value: prefs.binding(\.accentTint),
+                          changed: prefs.hasCustomAccent,
+                          reset: { prefs.resetAccent() })
+            SettingColour(title: "Nothing waiting",
+                          value: prefs.binding(\.quietTint),
+                          changed: prefs.quietTint.rgb != Defaults.quietTint,
+                          reset: { prefs.quietTint = Color(rgb: Defaults.quietTint) })
+            Note("""
+            The accent is the dot with something waiting on it, and everything in here \
+            that is not grey. Reset puts back Instagram's own gradient, which is five \
+            colours drifting rather than one.
+            """)
+        }
+
+        GlassSection(title: "Placement") {
+            Toggle("Hidden mode", isOn: prefs.binding(\.hiddenMode))
+            Note("Parks the dot inside the notch, where the display has no pixels.")
+            Divider().opacity(0.4)
+            Picker("Position", selection: prefs.binding(\.side)) {
+                ForEach(DockSide.allCases) { Text($0.label).tag($0) }
+            }
+            SettingSlider(title: "Distance from notch",
+                          value: prefs.binding(\.horizontalOffset),
+                          range: 0...80, unit: "pt", standard: Defaults.horizontalOffset)
+        }
+
+        GlassSection(title: "Dot") {
+            SettingSlider(title: "Size", value: prefs.binding(\.dotSize),
+                          range: 8...22, unit: "pt", standard: Defaults.dotSize)
+            Toggle("Show the number without hovering", isOn: prefs.binding(\.showCountAtRest))
+            Toggle("Hide the dot while nothing is waiting", isOn: prefs.binding(\.hideWhenEmpty))
+            Divider().opacity(0.4)
+            SettingSlider(title: "Glassiness", value: prefs.binding(\.dotGlassiness),
+                          range: 0...100, unit: "%", zeroLabel: "Solid",
+                          standard: Defaults.dotGlassiness)
+            Divider().opacity(0.4)
+            SettingSlider(title: "Hover sensitivity",
+                          value: prefs.binding(\.hoverSensitivity),
+                          range: 0...90, unit: "pt", zeroLabel: "Touch",
+                          standard: Defaults.hoverSensitivity)
+            // Kept because the number says points and means patience: at the
+            // bottom of the range the cursor has to land on the dot itself.
+            Note("How close the cursor has to come before the menu opens.")
+        }
+
+        GlassSection(title: "Menu") {
+            Toggle("Show details on hover", isOn: prefs.binding(\.showHoverCard))
+            Toggle("Include message previews", isOn: prefs.binding(\.showMessagePreviews))
+            Toggle("Button for the Instagram inbox", isOn: prefs.binding(\.showInboxButton))
+            Toggle("Colour glow in the menu", isOn: prefs.binding(\.menuGlow))
+        }
+
+        GlassSection(title: "Motion") {
+            Toggle("Animations", isOn: prefs.binding(\.animations))
+        }
+    }
+}
+
+// MARK: - General
+
+private struct GeneralPane: View {
+    @ObservedObject var model: GlintModel
+    @ObservedObject var prefs: Preferences
+    /// Ticks so "Updated 4m ago" stays true while the window sits open.
+    let tick: Date
+
+    /// Signed out is the one state with nothing to refresh, nothing to erase and
+    /// no account to inspect, so it is the only one that changes the row.
+    private var signedIn: Bool { model.state != .needsAuth }
+
+    /// Every action the connection has, in one row, showing only what applies.
+    ///
+    /// `remedy` leads when there is one: it is the same button whether the fix
+    /// is signing in or retrying a failed poll, and it is the thing to press.
+    private var actions: some View {
+        HStack(spacing: 8) {
+            if let remedy = model.source.remedy {
+                Button(remedy.title) { remedy.perform() }
+                    .buttonStyle(.borderedProminent)
+            }
+            if signedIn {
+                Button("Refresh") { model.refresh() }
+                Button("Show what Glint is connected to") {
+                    NSWorkspace.shared.open(URL(string: "https://www.instagram.com/accounts/access_tool/")!)
+                }
+            }
+            Spacer(minLength: 0)
+            if signedIn {
+                Button("Sign out and erase session") { model.source.signOut() }
+            }
+        }
+        .controlSize(.small)
+    }
+
+    var body: some View {
+        GlassSection(title: "Application") {
+            Toggle("Launch at login", isOn: prefs.binding(\.launchAtLogin))
+            Toggle("Open the menu with \u{2325}G", isOn: prefs.binding(\.hotkeyEnabled))
+            // The switch, which sound, and hearing it: one row, because they are
+            // one decision.
+            HStack(spacing: 8) {
+                Toggle("Play a sound when something new arrives", isOn: prefs.binding(\.playSoundOnNew))
+                Spacer(minLength: 0)
+                Picker("", selection: prefs.binding(\.alertSound)) {
+                    ForEach(AlertSounds.names, id: \.self) { Text($0).tag($0) }
+                }
+                .labelsHidden()
+                .controlSize(.small)
+                .frame(width: 130)
+                // Dimmed one control at a time. Disabling the row would take the
+                // switch with it, and a switch that cannot be switched back on
+                // is a trap.
+                .disabled(!prefs.playSoundOnNew)
+                // Picking one plays it. Choosing a sound you cannot hear is
+                // choosing a word from a list, which is not the same thing.
+                .onChange(of: prefs.alertSound) { _, _ in GlintModel.arrivalSound() }
+                // Plays whatever an arrival would play, rather than a sound named
+                // again here: two places naming a sound is how they end up being
+                // different sounds.
+                Button {
+                    GlintModel.arrivalSound()
+                } label: {
+                    Image(systemName: "play.fill").font(.system(size: 9, weight: .bold))
+                }
+                .controlSize(.small)
+                .help("Hear it")
+                .disabled(!prefs.playSoundOnNew)
+            }
+        }
+
+        GlassSection(title: "Polling") {
+            SettingSlider(title: "Check every", value: prefs.binding(\.pollInterval),
+                          range: 5...120, unit: "s", standard: Defaults.pollInterval)
+            SettingSlider(title: "Reload session every", value: prefs.binding(\.webReloadMinutes),
+                          range: 5...60, unit: "m", standard: Defaults.webReloadMinutes)
+        }
+
+        // The privacy facts sit in this card rather than their own: they answer
+        // "what is this connected to", which is the same question the status
+        // line answers, and a separate box made them read as a disclaimer.
+        GlassSection(title: "Connection") {
             HStack(alignment: .top, spacing: 12) {
                 StatusLight(state: model.state)
                     .padding(.top, 3)
@@ -79,199 +371,14 @@ private struct NotificationsPane: View {
                     }
                 }
                 Spacer(minLength: 0)
-                VStack(spacing: 6) {
-                    if let remedy = model.source.remedy {
-                        Button(remedy.title) { remedy.perform() }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                    } else {
-                        Button("Sign in…") { model.source.presentLogin() }
-                            .controlSize(.small)
-                    }
-                    Button("Refresh") { model.refresh() }.controlSize(.small)
-                }
             }
-        }
-
-        GlassSection(title: "Count towards the dot") {
-            Note("""
-            Everything you switch on is added into the single number on the dot, \
-            and listed separately in the menu.
-            """)
-            ForEach(ActivityKind.allCases) { kind in
-                if kind != ActivityKind.allCases.first { Divider().opacity(0.4) }
-                KindRow(kind: kind, model: model, prefs: prefs)
-            }
-        }
-
-        Note("""
-        Reactions are kept apart from messages on purpose. A heart on something you \
-        sent is not the same as somebody writing to you. The dot stays grey until a \
-        real message is waiting.
-        """)
-        .padding(.horizontal, 2)
-    }
-}
-
-/// A coloured dot for the connection, the same vocabulary as the dot beside
-/// the notch. Reading a status word is slower than reading a colour.
-private struct StatusLight: View {
-    let state: FeedState
-
-    private var colour: Color {
-        switch state {
-        case .ready:     return Accent.instagram.glow
-        case .loading:   return Palette.textLo
-        case .needsAuth: return Palette.warning
-        case .failed:    return Palette.warning
-        }
-    }
-
-    var body: some View {
-        Circle()
-            .fill(colour)
-            .frame(width: 8, height: 8)
-            .shadow(color: colour.opacity(0.6), radius: 3)
-    }
-}
-
-private struct KindRow: View {
-    let kind: ActivityKind
-    @ObservedObject var model: GlintModel
-    @ObservedObject var prefs: Preferences
-
-    private var summary: KindSummary? {
-        model.summaries.first { $0.kind == kind }
-    }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Toggle("", isOn: Binding(get: { prefs.isEnabled(kind) },
-                                     set: { prefs.setEnabled(kind, $0) }))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-
-            Image(systemName: kind.symbol)
-                .font(.system(size: 12))
-                .frame(width: 18)
-                .foregroundStyle(prefs.isEnabled(kind) ? Accent.instagram.glow : .secondary)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(kind.title).font(.system(size: 12.5))
-                Text(kind.explanation).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            if let summary, prefs.isEnabled(kind) {
-                Text("\(summary.count)")
-                    .font(.system(size: 12.5).monospacedDigit())
-                    .foregroundStyle(summary.count > 0 ? .primary : .secondary)
-                if summary.count > 0 {
-                    Button("Mark read") { model.markRead(kind) }.controlSize(.small)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Appearance
-
-private struct AppearancePane: View {
-    @ObservedObject var prefs: Preferences
-
-    var body: some View {
-        GlassSection(title: "Placement") {
-            Toggle("Hidden mode", isOn: prefs.binding(\.hiddenMode))
-            Note("""
-            Parks the dot inside the notch, where the display has no pixels. It is \
-            genuinely invisible. Move the cursor into the notch and it slides out.
-            """)
             Divider().opacity(0.4)
-            Picker("Position", selection: prefs.binding(\.side)) {
-                ForEach(DockSide.allCases) { Text($0.label).tag($0) }
-            }
-            SettingSlider(title: "Distance from notch",
-                          value: prefs.binding(\.horizontalOffset),
-                          range: 0...80, unit: "pt")
-        }
-
-        GlassSection(title: "Dot") {
-            SettingSlider(title: "Size", value: prefs.binding(\.dotSize),
-                          range: 8...22, unit: "pt")
-            Toggle("Show the number without hovering", isOn: prefs.binding(\.showCountAtRest))
-            Toggle("Hide the dot while nothing is waiting", isOn: prefs.binding(\.hideWhenEmpty))
-            Divider().opacity(0.4)
-            SettingSlider(title: "Hover sensitivity",
-                          value: prefs.binding(\.hoverSensitivity),
-                          range: 0...90, unit: "pt", zeroLabel: "Touch")
             Note("""
-            How close the cursor has to come before the menu opens. Larger reacts from \
-            further away. At the lowest setting the cursor has to land on the dot itself.
+            Your password never goes through Glint, nothing but instagram.com is \
+            contacted, and the session lives in ~/Library/WebKit.
             """)
-        }
-
-        GlassSection(title: "Menu") {
-            Toggle("Show details on hover", isOn: prefs.binding(\.showHoverCard))
-            Toggle("Include message previews", isOn: prefs.binding(\.showMessagePreviews))
-            Note("Previews show the last line of each conversation. Turn them off to see only who wrote.")
-        }
-
-        GlassSection(title: "Motion") {
-            Toggle("Animations", isOn: prefs.binding(\.animations))
-            Note("""
-            The colour drifting inside the dot, the menu unfolding, the glow. \
-            Off means everything lands at once and nothing moves on its own.
-            """)
-        }
-    }
-}
-
-// MARK: - General
-
-private struct GeneralPane: View {
-    @ObservedObject var model: GlintModel
-    @ObservedObject var prefs: Preferences
-
-    var body: some View {
-        GlassSection {
-            Toggle("Launch at login", isOn: prefs.binding(\.launchAtLogin))
-            Toggle("Play a sound when something new arrives", isOn: prefs.binding(\.playSoundOnNew))
-        }
-
-        GlassSection(title: "Polling") {
-            SettingSlider(title: "Check every", value: prefs.binding(\.pollInterval),
-                          range: 5...120, unit: "s")
-            SettingSlider(title: "Reload session every", value: prefs.binding(\.webReloadMinutes),
-                          range: 5...60, unit: "m")
-        }
-
-        GlassSection(title: "Privacy") {
-            LabeledContent("Password") { Text("Never seen by Glint").foregroundStyle(.secondary) }
-            LabeledContent("Session stored in") {
-                Text("~/Library/WebKit").foregroundStyle(.secondary).textSelection(.enabled)
-            }
-            LabeledContent("Talks to") {
-                Text("instagram.com only").foregroundStyle(.secondary)
-            }
-            Note("""
-            You sign in on Instagram's own page, in the standard macOS web view. Your \
-            password goes to Instagram and never through Glint. What is kept is the \
-            session cookie, and macOS keeps it, the same way it keeps Safari's. Glint \
-            has no account and no server. The only thing it ever sends is a reply you \
-            typed yourself. No analytics. No telemetry.
-            """)
-            HStack {
-                Button("Show what Glint is connected to") {
-                    NSWorkspace.shared.open(URL(string: "https://www.instagram.com/accounts/access_tool/")!)
-                }
-                .controlSize(.small)
-                Button("Sign out and erase session") { model.source.signOut() }
-                    .controlSize(.small)
-            }
-        }
-
-        GlassSection {
-            Button("Quit Glint") { NSApp.terminate(nil) }
+            .textSelection(.enabled)
+            actions
         }
     }
 }
@@ -313,7 +420,7 @@ private struct AboutPane: View {
                 // The accent, stated once, where it is decoration rather than
                 // information.
                 Capsule()
-                    .fill(LinearGradient(colors: Accent.instagram.colors,
+                    .fill(LinearGradient(colors: Accent.current.colors,
                                          startPoint: .leading, endPoint: .trailing))
                     .frame(width: 130, height: 3)
                     .padding(.vertical, 16)

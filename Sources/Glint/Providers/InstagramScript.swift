@@ -43,8 +43,28 @@ enum InstagramScript {
       if (t === 'media' || t === 'raven_media') return { kind: 'media', preview: 'Sent a photo' };
       if (t === 'clip'  || t === 'xma_clip')    return { kind: 'share', preview: 'Shared a reel' };
       if (t === 'media_share' || t === 'xma_media_share') return { kind: 'share', preview: 'Shared a post' };
-      if (t === 'story_share' || t === 'reel_share' || t === 'xma_story_share')
-                                  return { kind: 'share',    preview: 'Shared a story' };
+      // A story reply is not a share. Instagram files "somebody wrote to you
+      // about your story" under reel_share and puts what they actually typed in
+      // reel_share.text, so reading item_type alone reported 22 conversations
+      // as "Shared a story" when every one of them was a message. The subtype
+      // is the flag that separates them: reply, reaction, mention.
+      if (t === 'story_share' || t === 'reel_share' || t === 'xma_story_share') {
+        const rs = it.reel_share || it.story_share || {};
+        const said = String(rs.text || it.text || '').trim();
+        switch (String(rs.type || '')) {
+          case 'reply':
+            // Counts as a message, because it is one.
+            return { kind: 'text', preview: said ? 'Story: ' + said : 'Replied to a story' };
+          case 'reaction':
+            // Usually a single emoji, and noise in the same way a heart on a
+            // message is noise.
+            return { kind: 'reaction', preview: said ? said + ' on a story' : 'Reacted to a story' };
+          case 'mention':
+            return { kind: 'share', preview: 'Mentioned you in a story' };
+          default:
+            return { kind: 'share', preview: said ? 'Story: ' + said : 'Shared a story' };
+        }
+      }
       if (t === 'link')           return { kind: 'text',     preview: String((it.link && it.link.text) || 'Sent a link') };
       if (t === 'placeholder')    return { kind: 'system',   preview: 'Message unavailable' };
       return { kind: 'other', preview: t ? String(t).replace(/_/g, ' ') : '' };
@@ -305,9 +325,27 @@ enum InstagramScript {
       }
       let parsed = null;
       try { parsed = JSON.parse(raw); } catch (e) {}
-      if (!parsed) return JSON.stringify({ status: 'error', detail: 'not JSON: ' + raw.slice(0, 300) });
+      // An unrouted Instagram path answers 200 with the app's own HTML, so a
+      // rotated doc_id looks exactly like a success until the body is read.
+      // Naming it here turns the one piece of scheduled maintenance from a
+      // mystery into an instruction.
+      if (!parsed) {
+        const html = /^\s*<(!doctype|html)/i.test(raw);
+        return JSON.stringify({
+          status: html ? 'stale' : 'error',
+          detail: html ? 'doc_id ' + String(docID) + ' is no longer routed'
+                       : 'not JSON: ' + raw.slice(0, 300)
+        });
+      }
       if (parsed.errors) {
-        return JSON.stringify({ status: 'error', detail: JSON.stringify(parsed.errors).slice(0, 400) });
+        // Same failure, reported politely rather than by serving a web page.
+        const text = JSON.stringify(parsed.errors);
+        const stale = /doc_?id|persisted|not found|unknown query/i.test(text);
+        return JSON.stringify({
+          status: stale ? 'stale' : 'error',
+          detail: stale ? 'doc_id ' + String(docID) + ' was rejected: ' + text.slice(0, 200)
+                        : text.slice(0, 400)
+        });
       }
       return JSON.stringify({ status: 'ok', detail: JSON.stringify(parsed.data || {}).slice(0, 200) });
     } catch (e) {
@@ -315,88 +353,6 @@ enum InstagramScript {
     }
     """#
 
-    static let sendText = #"""
-    const csrf = (document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/) || [])[1] || '';
-    if (!csrf) return JSON.stringify({ status: 'auth', detail: 'no csrf token' });
-
-    // Instagram hands the web client a claim token on first response and wants
-    // it echoed on writes. Reads get away without it. Absent is fine, wrong is
-    // not, so it is only sent when the page actually has one.
-    let claim = '';
-    try { claim = sessionStorage.getItem('www-claim-v2') || ''; } catch (e) {}
-
-    const H = {
-      'x-ig-app-id': '936619743392459',
-      'x-requested-with': 'XMLHttpRequest',
-      'x-csrftoken': csrf,
-      'x-instagram-ajax': '1',
-      'content-type': 'application/x-www-form-urlencoded'
-    };
-    if (claim) H['x-ig-www-claim'] = claim;
-
-    const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-      const r = Math.random() * 16 | 0;
-      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-    });
-    const context = uuid();
-
-    // thread_id and thread_ids are both sent because the endpoint has accepted
-    // each spelling at different times and ignores the one it does not want.
-    // offline_threading_id is the client-side id the web app dedupes on.
-    const offline = String(Date.now()) + String(Math.floor(Math.random() * 1000000));
-    const body = new URLSearchParams({
-      action: 'send_item',
-      thread_id: String(threadID),
-      thread_ids: JSON.stringify([String(threadID)]),
-      text: String(text),
-      client_context: context,
-      mutation_token: context,
-      offline_threading_id: offline
-    }).toString();
-
-    const endpoint = '/api/v1/direct_v2/threads/broadcast/text/';
-
-    if (dryRun) {
-      return JSON.stringify({
-        status: 'dry',
-        detail: 'POST ' + endpoint + ' claim=' + (claim ? 'yes' : 'no') + ' ' + body
-      });
-    }
-
-    try {
-      const r = await fetch(endpoint, {
-        method: 'POST', headers: H, credentials: 'include', body: body
-      });
-      const raw = await r.text();
-      // Everything about a refusal is reported. Guessing at why a write failed
-      // from a status code alone is what makes this endpoint hard to work on.
-      if (!r.ok) {
-        return JSON.stringify({
-          status: (r.status === 401 || r.status === 403) ? 'auth' : 'error',
-          detail: 'HTTP ' + r.status + ' claim=' + (claim ? 'yes' : 'no') + ' ' + raw.slice(0, 400)
-        });
-      }
-      let parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) {}
-      if (parsed && parsed.status === 'ok') return JSON.stringify({ status: 'ok' });
-      return JSON.stringify({ status: 'error', detail: 'HTTP 200 but ' + raw.slice(0, 400) });
-    } catch (e) {
-      return JSON.stringify({ status: 'error', detail: 'threw: ' + String((e && e.message) || e) });
-    }
-    """#
-
-    /// Asks the site which send path it actually routes.
-    ///
-    /// Instagram answers an unrouted path with the app's own HTML and a 200,
-    /// which is what the first attempt at sending got back. A real endpoint
-    /// answers with JSON even when it refuses, so content type separates
-    /// "wrong address" from "wrong request" without sending anything. Every
-    /// candidate is aimed at thread id 0, which cannot exist.
-    /// GET only. A route that exists refuses a GET with JSON, usually a 405. A
-    /// route that does not exist is answered with the app shell and a 200,
-    /// which is exactly what the send POST got back. Two controls bracket the
-    /// answer: the inbox path Glint already reads, and a path invented here
-    /// that cannot exist. No write is attempted.
     static let probeSendEndpoints = #"""
     const csrf = (document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/) || [])[1] || '';
     let claim = '';

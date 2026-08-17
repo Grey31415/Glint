@@ -13,6 +13,18 @@ struct KindSummary: Identifiable, Equatable {
     var id: String { kind.rawValue }
 }
 
+/// Something you sent from the menu, kept locally.
+///
+/// Instagram echoes a reply back on the next poll, but only as the preview line
+/// of a thread that has by then stopped waiting on you - which is to say the row
+/// disappears and takes the evidence with it. Our own copy is what lets the
+/// answer sit under the message it answers, long enough to read.
+struct SentReply: Identifiable, Equatable {
+    let id = UUID()
+    let text: String
+    let date: Date
+}
+
 /// Sits between the Instagram session and the UI: applies the user's category
 /// toggles and read-watermarks, and publishes the numbers the dot and the hover
 /// card render.
@@ -21,6 +33,8 @@ final class GlintModel: ObservableObject {
     @Published private(set) var summaries: [KindSummary] = []
     @Published private(set) var total: Int = 0
     @Published private(set) var arrivalTick: Int = 0
+    /// Replies sent from the menu this session, by thread.
+    @Published private(set) var sentReplies: [String: [SentReply]] = [:]
 
     let source: InstagramSource
     let preferences: Preferences
@@ -32,6 +46,10 @@ final class GlintModel: ObservableObject {
         self.preferences = preferences
         self.source = InstagramSource(preferences: preferences)
     }
+
+    /// The sound something new makes. Named in one place so the arrival and the
+    /// Test button in Settings cannot end up playing different things.
+    static func arrivalSound() { NSSound(named: Preferences.alertSoundName)?.play() }
 
     func start() {
         source.$feed
@@ -65,11 +83,60 @@ final class GlintModel: ObservableObject {
     var state: FeedState { source.state }
     var feed: InstagramFeed { source.feed }
 
-    /// Threads the card should list: only ones still waiting on you. Anything
-    /// read or already answered is gone, so the card stays a to-do list rather
-    /// than turning into a second inbox.
+    /// How long a thread you have answered stays on the card.
+    ///
+    /// Long enough that the answer is still there when you glance back, short
+    /// enough that the card does not silt up with finished conversations.
+    static let replyLinger: TimeInterval = 5 * 60
+
+    /// Threads the user has not asked to be left alone about.
+    ///
+    /// Muted and group are read straight off the inbox and were, until now,
+    /// parsed and thrown away. Filtering here rather than when the feed is built
+    /// means switching either setting takes effect on the spot, without waiting
+    /// for the next poll.
+    private var visibleThreads: [DirectThread] {
+        feed.threads.filter { thread in
+            if preferences.ignoreMuted, thread.isMuted { return false }
+            if preferences.ignoreGroups, thread.isGroup { return false }
+            return true
+        }
+    }
+
+    /// What a bucket holds before the read-watermark, with the thread filters
+    /// already applied. The activity kinds have no threads to filter, so they
+    /// read straight through.
+    func rawCount(for kind: ActivityKind) -> Int {
+        switch kind {
+        case .messages:  return visibleThreads.filter { $0.isUnread && $0.bucket == .messages }.count
+        case .reactions: return visibleThreads.filter { $0.isUnread && $0.bucket == .reactions }.count
+        default:         return feed.count(for: kind)
+        }
+    }
+
+    /// Threads the card should list: ones still waiting on you, plus ones you
+    /// have just answered. Anything read is gone, so the card stays a to-do list
+    /// rather than turning into a second inbox.
     func cardThreads(limit: Int = 8) -> [DirectThread] {
-        Array(feed.threads.filter(\.needsAttention).prefix(limit))
+        Array(visibleThreads
+            .filter { $0.needsAttention || sentReplies[$0.id] != nil }
+            .prefix(limit))
+    }
+
+    /// What you sent into this thread, oldest first.
+    func replies(to threadID: String) -> [SentReply] {
+        sentReplies[threadID] ?? []
+    }
+
+    /// Drops answers old enough that the thread should have gone quiet again.
+    private func pruneSentReplies() {
+        guard !sentReplies.isEmpty else { return }
+        let cutoff = Date().addingTimeInterval(-Self.replyLinger)
+        let kept = sentReplies.compactMapValues { replies -> [SentReply]? in
+            let live = replies.filter { $0.date > cutoff }
+            return live.isEmpty ? nil : live
+        }
+        if kept != sentReplies { sentReplies = kept }
     }
 
     /// Buckets the user asked to be told about, in a stable display order.
@@ -78,13 +145,14 @@ final class GlintModel: ObservableObject {
     // MARK: - Rebuild
 
     private func rebuild() {
+        pruneSentReplies()
         let enabled = preferences.enabledKinds
         var baselines = preferences.readBaselines
         var baselinesChanged = false
 
         var next: [KindSummary] = []
         for kind in ActivityKind.allCases where enabled.contains(kind) {
-            let raw = feed.count(for: kind)
+            let raw = rawCount(for: kind)
             // The watermark can never exceed the real count, so reading things
             // on Instagram itself releases it instead of muting it forever.
             let stored = baselines[kind.rawValue] ?? 0
@@ -102,7 +170,7 @@ final class GlintModel: ObservableObject {
         let newTotal = next.reduce(0) { $0 + $1.count }
         if newTotal > previousTotal {
             arrivalTick &+= 1
-            if preferences.playSoundOnNew { NSSound(named: "Tink")?.play() }
+            if preferences.playSoundOnNew { Self.arrivalSound() }
         }
         previousTotal = newTotal
 
@@ -123,7 +191,7 @@ final class GlintModel: ObservableObject {
     /// opening the conversation, so this is a local watermark: remember what
     /// the count was and show only what arrives after.
     func markRead(_ kind: ActivityKind) {
-        let raw = feed.count(for: kind)
+        let raw = rawCount(for: kind)
         guard raw > 0 else { return }
         var baselines = preferences.readBaselines
         baselines[kind.rawValue] = raw
@@ -134,7 +202,7 @@ final class GlintModel: ObservableObject {
     func markAllRead() {
         var baselines = preferences.readBaselines
         for kind in ActivityKind.allCases {
-            let raw = feed.count(for: kind)
+            let raw = rawCount(for: kind)
             if raw > 0 { baselines[kind.rawValue] = raw }
         }
         preferences.readBaselines = baselines
@@ -171,6 +239,12 @@ final class GlintModel: ObservableObject {
 
     /// Replies in an existing thread. The one thing Glint writes.
     func send(_ text: String, to thread: DirectThread) async -> SendResult {
-        await source.send(text, to: thread.id)
+        let result = await source.send(text, to: thread.id)
+        // Only a real send is remembered. A dry run that left an answer on the
+        // card would be claiming something that never left the machine.
+        if case .sent = result {
+            sentReplies[thread.id, default: []].append(SentReply(text: text, date: Date()))
+        }
+        return result
     }
 }

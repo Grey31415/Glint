@@ -150,6 +150,21 @@ GLINT_DRY_RUN=1    # assemble and log the request, send nothing
 GLINT_PROBE_SEND=1 # run the send path against the first thread on launch
 ```
 
+### Where your answer goes
+
+A sent reply stays on the card, indented under the message it answers, for five
+minutes. Instagram does echo it back on the next poll, but only as the preview
+line of a thread that has by then stopped waiting on you - so the row and the
+evidence both disappear, and the send is confirmed by nothing at all. Glint
+keeps its own copy of what it sent, in memory, and `cardThreads()` holds any
+thread that has one.
+
+The linger is short by design. The card is a list of things waiting on you, and
+a conversation you have answered is finished; five minutes is long enough to
+glance back and see what you wrote, short enough that the card does not silt up.
+A dry run never records an answer - claiming a send that never left the machine
+is worse than showing nothing.
+
 ### Marking as read
 
 Instagram will not let anything be marked read from outside without opening the
@@ -232,6 +247,24 @@ from the far corner when closing:
    curve. They are now pinned by layout alignment, so there is no arithmetic
    left to break.
 
+Magnification is the exception, and it pins the *opposite* edge: the outer end
+of the resting dot. Growing from the notch-side anchor instead is the obvious
+reading of the rule above and looks wrong - every point of magnification shoves
+the dot out along the menu bar, so approaching it makes it lunge away from the
+notch before the menu has opened. Pinning the far edge sends the growth towards
+the housing, which is where the dot is about to go anyway. It is not the
+centring that caused the trouble: both edges are still fixed points, one per
+phase, and the view holds this rectangle at rest size for as long as the menu is
+open, so the magnify spring is never in flight at the same time as the morph.
+
+The other thing that travels is the dot itself, and only on its way out. As
+the menu takes over it slides *towards* the notch - right when it is docked on
+the left, left when it is docked on the right - and the surface's clip on the
+notch-side edge eats it, so it ducks behind the camera housing instead of
+dissolving on the spot while the surface sweeps out the other way. This does not
+reopen the failure above: it is a single quantity driven by the morph's own `t`,
+not two separately animated ones that have to cancel.
+
 The menu also freezes the geometry it opened at - the feed refreshes on a timer,
 and arriving rows would otherwise resize it under the cursor.
 
@@ -260,6 +293,13 @@ every brand ends up pink. WhatsApp's greens, back when it had them, were ordered
 dark-to-light for the same reason.
 
 Lit dots redraw at 30fps; quiet ones are static.
+
+The same colour field doubles as the bloom in the open menu, which is why
+*Colour glow in the menu* cannot simply switch it off: draining it would drain
+the dot as well, since the fill is what makes a dot a dot. Off instead holds the
+field at dot size and fades it on the dot's own curve, so the colour ducks behind
+the notch with it and the menu is glass. The accent wash on the glass goes with
+it, or the switch would look half-applied.
 
 ## Debugging
 

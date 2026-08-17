@@ -70,11 +70,20 @@ enum MorphMetrics {
 
     /// The dot as drawn, including any cursor magnification.
     ///
-    /// Anchored on `anchorX` - the notch-side edge, which never moves - rather
-    /// than on the dot's centre. Centring would make the pinned edge depend on
-    /// the magnification, and magnification animates on a different curve from
-    /// the morph: the two disagree mid-flight and the surface visibly slides
-    /// sideways while it collapses.
+    /// Magnification is pinned on the *far* edge - the outer end of the resting
+    /// dot - so growing towards the cursor carries the dot towards the notch and
+    /// under the housing. Pinning the notch-side edge instead is the obvious
+    /// reading of "the anchor never moves" and looks wrong: every point of
+    /// magnification shoves the dot out along the menu bar, so approaching it
+    /// makes it lunge away from the notch before the menu has even opened.
+    ///
+    /// This does not resurrect the bug that anchoring cost us before. That was
+    /// *centring*, which put the pinned edge halfway into the magnification and
+    /// left the morph and the magnify spring fighting over it mid-flight. Both
+    /// edges here are still fixed points: the far one during magnification, the
+    /// notch-side one across the morph - which is safe because the view holds
+    /// this rect at rest size for as long as the menu is open, so magnification
+    /// is never in flight at the same time as the morph.
     static func closedRect(anchorX: CGFloat,
                            side: DockSide,
                            menuBarHeight: CGFloat,
@@ -91,7 +100,10 @@ enum MorphMetrics {
         let h = DotGeometry.renderHeight(rest: restH, full: dotSize, progress: progress, scale: scale)
         let w = (restW + (activeW - restW) * progress) * scale
         let top = DotGeometry.topY(menuBarHeight: menuBarHeight, restHeight: restH)
-        return CGRect(x: side == .left ? anchorX - w : anchorX, y: top, width: w, height: h)
+        // Where the resting dot ends, away from the notch. Fixed, whatever the
+        // magnification does.
+        let far = side == .left ? anchorX - restW : anchorX + restW
+        return CGRect(x: side == .left ? far : far - w, y: top, width: w, height: h)
     }
 
     /// The menu, sharing the dot's anchor and top edge, so the only quantities

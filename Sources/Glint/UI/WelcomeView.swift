@@ -99,7 +99,7 @@ private struct Point: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: symbol)
                 .font(.system(size: 14))
-                .foregroundStyle(Accent.instagram.glow)
+                .foregroundStyle(Accent.current.glow)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 13, weight: .semibold))
@@ -119,7 +119,7 @@ struct LoginBanner: View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "lock.fill")
                 .font(.system(size: 11))
-                .foregroundStyle(Accent.instagram.glow)
+                .foregroundStyle(Accent.current.glow)
             Text("This is Instagram's own sign-in page. Your password goes to Instagram, not to Glint. Glint only keeps the session cookie macOS stores for it on this Mac.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)

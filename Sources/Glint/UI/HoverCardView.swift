@@ -78,6 +78,10 @@ struct HoverCardView: View {
                 ForEach(threads) { thread in
                     ThreadEntry(thread: thread,
                                 showPreview: prefs.showMessagePreviews && measuring != .width,
+                                // Like previews, answers are dropped while
+                                // measuring width: a long one would drag the
+                                // whole menu open, and clipping it costs nothing.
+                                replies: measuring == .width ? [] : model.replies(to: thread.id),
                                 isComposing: composing == thread.id,
                                 measuring: measuring != .none,
                                 onReply: { onCompose(composing == thread.id ? nil : thread.id) },
@@ -115,13 +119,25 @@ struct HoverCardView: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
             if model.total > 0 {
-                MiniButton(symbol: "checkmark", help: "Mark all read") { model.markAllRead() }
+                MiniButton(help: "Mark all read", action: { model.markAllRead() }) {
+                    Image(systemName: "checkmark").font(.system(size: 10.5, weight: .semibold))
+                }
             } else if model.totalSuppressed > 0 {
-                MiniButton(symbol: "arrow.uturn.backward", help: "Undo mark as read") {
-                    model.clearReadMarks()
+                MiniButton(help: "Undo mark as read", action: { model.clearReadMarks() }) {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 10.5, weight: .semibold))
                 }
             }
-            MiniButton(symbol: "gearshape", help: "Settings", action: onOpenSettings)
+            if prefs.showInboxButton {
+                MiniButton(help: "Open Instagram messages", action: { model.openInbox() }) {
+                    InstagramMark()
+                        .stroke(style: StrokeStyle(lineWidth: 1.1, lineJoin: .round))
+                        .frame(width: 12, height: 12)
+                }
+            }
+            MiniButton(help: "Settings", action: onOpenSettings) {
+                Image(systemName: "gearshape").font(.system(size: 10.5, weight: .semibold))
+            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 11)
@@ -174,14 +190,17 @@ struct HoverCardView: View {
 
 // MARK: - Rows
 
-/// A conversation and its reply field, as one object.
+/// A conversation, what you have answered into it, and its reply field, as one
+/// object.
 ///
 /// The highlight belongs here rather than on the row. While the field is open
 /// the two are one target, and lighting only the row above it made the field
-/// look like it belonged to whatever came next.
+/// look like it belonged to whatever came next. Answers indent under the message
+/// for the same reason: the block has to read as one conversation, top to bottom.
 private struct ThreadEntry: View {
     let thread: DirectThread
     let showPreview: Bool
+    let replies: [SentReply]
     let isComposing: Bool
     let measuring: Bool
     let onReply: () -> Void
@@ -198,6 +217,10 @@ private struct ThreadEntry: View {
                       isComposing: isComposing,
                       onReply: onReply,
                       onTap: onTap)
+
+            ForEach(replies) { reply in
+                SentReplyRow(reply: reply)
+            }
 
             if isComposing {
                 ReplyComposer(thread: thread,
@@ -233,7 +256,7 @@ private struct ThreadRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Circle()
-                .fill(thread.isUnread ? Accent.instagram.glow : .clear)
+                .fill(thread.isUnread ? Accent.current.glow : .clear)
                 .frame(width: gutter, height: gutter)
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 1) {
@@ -267,6 +290,63 @@ private struct ThreadRow: View {
     }
 }
 
+/// What you sent, under what you sent it to.
+///
+/// Indented to the message's text column and hung off an elbow, so the eye
+/// reads the pair as question then answer without needing a label to say so.
+/// "you" is still there, quietly, for the case where a thread has collected
+/// several answers and the indent alone stops carrying the distinction.
+private struct SentReplyRow: View {
+    let reply: SentReply
+
+    /// Aligns the elbow's upright with the left edge of the username above:
+    /// 14pt of card padding, then the 8pt unread gutter and its 8pt of spacing.
+    private let indent: CGFloat = 30
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            ReplyElbow()
+                .stroke(Accent.current.glow.opacity(0.45),
+                        style: StrokeStyle(lineWidth: 1, lineCap: .round))
+                .frame(width: 10, height: 11)
+                .padding(.top, 1)
+            Text("you")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Palette.textLo)
+            Text(reply.text)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Palette.textMid)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Text(RelativeTime.string(for: reply.date))
+                .font(.system(size: 10.5).monospacedDigit())
+                .foregroundStyle(Palette.textLo)
+        }
+        .padding(.leading, indent)
+        .padding(.trailing, 14)
+        .padding(.bottom, 5)
+    }
+}
+
+/// Down from the message, then a quarter turn into the answer.
+///
+/// Drawn rather than typed as an arrow glyph: a character would sit on the text
+/// baseline and carry its own side bearings, which put the corner in a slightly
+/// different place at every font size.
+private struct ReplyElbow: Shape {
+    func path(in rect: CGRect) -> Path {
+        let radius = min(5, rect.width, rect.height)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - radius))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + radius, y: rect.maxY),
+                          control: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        return path
+    }
+}
+
 /// A pen, because it opens somewhere to write. The aeroplane lives in the
 /// field, where it does the sending.
 ///
@@ -281,7 +361,7 @@ private struct ReplyButton: View {
         Button(action: action) {
             Image(systemName: "pencil")
                 .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(active ? Accent.instagram.glow
+                .foregroundStyle(active ? Accent.current.glow
                                         : (hovering ? Palette.textHi : Palette.textLo))
                 .frame(width: 20, height: 18)
                 .background(Capsule().fill(hovering && !active ? Palette.rowHover : .clear))
@@ -336,7 +416,7 @@ private struct ReplyComposer: View {
                     Button(action: send) {
                         Image(systemName: "paperplane.fill")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(canSend ? Accent.instagram.glow : Palette.textLo)
+                            .foregroundStyle(canSend ? Accent.current.glow : Palette.textLo)
                             .frame(width: 18, height: 16)
                     }
                     .buttonStyle(.plain)
@@ -347,7 +427,7 @@ private struct ReplyComposer: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .liquidGlass(shape: field,
-                         tint: Accent.instagram.glow.opacity(0.10),
+                         tint: Accent.current.glow.opacity(0.10),
                          enabled: true)
             .clipShape(field)
             .overlay(field.strokeBorder(Palette.rim.opacity(0.22), lineWidth: 0.6))
@@ -408,7 +488,7 @@ private struct ActivityRow: View {
                 HStack(spacing: 8) {
                     Image(systemName: summary.kind.symbol)
                         .font(.system(size: 11))
-                        .foregroundStyle(Accent.instagram.glow)
+                        .foregroundStyle(Accent.current.glow)
                         .frame(width: 16)
                     Text("\(summary.count) \(summary.kind.title.lowercased())")
                         .font(.system(size: 12))
@@ -451,16 +531,18 @@ private struct ActivityRow: View {
     }
 }
 
-private struct MiniButton: View {
-    let symbol: String
+/// Takes its icon rather than a symbol name, because one of them is not a
+/// symbol: SF Symbols carries no brand marks.
+private struct MiniButton<Icon: View>: View {
     let help: String
     let action: () -> Void
+    @ViewBuilder let icon: () -> Icon
+
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10.5, weight: .semibold))
+            icon()
                 .foregroundStyle(hovering ? Palette.textHi : Palette.textLo)
                 .frame(width: 20, height: 18)
                 .background(Capsule().fill(hovering ? Palette.rowHover : .clear))
@@ -468,6 +550,30 @@ private struct MiniButton: View {
         .buttonStyle(.plain)
         .help(help)
         .onHover { hovering = $0 }
+    }
+}
+
+/// The Instagram glyph, drawn as an outline: rounded square, lens, flash.
+///
+/// A line drawing rather than the real logo. The gradient version is a wordmark
+/// that has to be reproduced exactly or not at all, and dropping a saturated
+/// badge into a row of hairline glyphs would make it the loudest thing in a menu
+/// whose whole point is being quiet.
+struct InstagramMark: Shape {
+    func path(in rect: CGRect) -> Path {
+        let side = min(rect.width, rect.height)
+        let box = CGRect(x: rect.midX - side / 2, y: rect.midY - side / 2,
+                         width: side, height: side).insetBy(dx: side * 0.07, dy: side * 0.07)
+        var path = Path()
+        path.addRoundedRect(in: box,
+                            cornerSize: CGSize(width: side * 0.30, height: side * 0.30),
+                            style: .continuous)
+        path.addEllipse(in: CGRect(x: box.midX - side * 0.21, y: box.midY - side * 0.21,
+                                   width: side * 0.42, height: side * 0.42))
+        let flash = side * 0.10
+        path.addEllipse(in: CGRect(x: box.maxX - side * 0.30, y: box.minY + side * 0.20,
+                                   width: flash, height: flash))
+        return path
     }
 }
 

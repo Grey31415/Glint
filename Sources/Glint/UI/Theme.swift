@@ -36,6 +36,17 @@ enum Palette {
     static let rowHover   = adaptive(dark: .srgb(1, 1, 1, 0.10),
                                      light: .srgb(0, 0, 0, 0.07))
 
+    /// Darkens glass, in dark mode only.
+    ///
+    /// Glass takes its weight from what is behind it, and behind the dot is the
+    /// notch: black, on every machine, in both appearances. In light mode that
+    /// contrast is what makes a glassy dot read as an object. In dark mode the
+    /// glass lightens the black it sits on, so the dot came out *paler* than its
+    /// surroundings - a bright pill on a dark bar, which is the opposite of what
+    /// turning the glass up asks for.
+    static let glassScrim = adaptive(dark: .srgb(0, 0, 0, 0.48),
+                                     light: .srgb(0, 0, 0, 0))
+
     /// The surface's own edge. Call sites vary its opacity along the border, so
     /// this carries the tone and lets that multiply into it.
     static let rim        = adaptive(dark: .srgb(1, 1, 1, 1.00),
@@ -80,6 +91,62 @@ struct Accent: Equatable {
         colors: [hex(0x9AA0B5), hex(0x7C8394), hex(0x6C7386), hex(0x5A6072), hex(0x8A90A2)],
         base: hex(0x6A7182),
         glow: hex(0x8A90A2))
+
+    /// What the app is currently painted in.
+    ///
+    /// Instagram's gradient until somebody chooses otherwise, and then five
+    /// shades of their colour - in the dot, the menu, and every control in
+    /// Settings, because an accent that applied to only some of them would look
+    /// like a bug rather than a choice.
+    static var current: Accent {
+        Preferences.customAccent.map(around) ?? .instagram
+    }
+
+    /// Five shades around one chosen colour.
+    ///
+    /// A single flat colour would have been the obvious way to let the quiet dot
+    /// be customised, and it kills the thing that makes the dot look alive: the
+    /// fill is blobs that drift past each other, and blobs of one colour are
+    /// indistinguishable from a disc. These spread in brightness rather than
+    /// hue, so the result is recognisably the colour that was picked.
+    static func around(_ colour: Color) -> Accent {
+        let base = NSColor(colour).usingColorSpace(.sRGB) ?? .gray
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        base.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+
+        func shade(hue dh: CGFloat, bright db: CGFloat) -> Color {
+            Color(nsColor: NSColor(hue: (h + dh + 1).truncatingRemainder(dividingBy: 1),
+                                   saturation: min(max(s, 0), 1),
+                                   brightness: min(max(b + db, 0.06), 1),
+                                   alpha: 1))
+        }
+        return Accent(colors: [shade(hue: -0.02, bright:  0.14),
+                               shade(hue:  0.01, bright: -0.05),
+                               shade(hue:  0.03, bright:  0.06),
+                               shade(hue: -0.03, bright: -0.13),
+                               shade(hue:  0.00, bright:  0.00)],
+                      base: shade(hue: 0, bright: -0.08),
+                      glow: colour)
+    }
+}
+
+extension Color {
+    /// Round trip through `UserDefaults`, which holds an integer rather than a
+    /// colour. Opacity is deliberately not carried: the dot's transparency is
+    /// the glassiness slider's job, and two ways to make it see-through would
+    /// fight each other.
+    init(rgb: Int) {
+        self.init(.sRGB,
+                  red: Double((rgb >> 16) & 0xFF) / 255,
+                  green: Double((rgb >> 8) & 0xFF) / 255,
+                  blue: Double(rgb & 0xFF) / 255)
+    }
+
+    var rgb: Int {
+        let ns = NSColor(self).usingColorSpace(.sRGB) ?? .gray
+        let byte = { (v: CGFloat) in Int((min(max(v, 0), 1) * 255).rounded()) }
+        return byte(ns.redComponent) << 16 | byte(ns.greenComponent) << 8 | byte(ns.blueComponent)
+    }
 }
 
 /// Shared spring vocabulary. One place to retune the whole feel.

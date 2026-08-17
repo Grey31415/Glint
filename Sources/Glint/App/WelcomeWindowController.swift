@@ -29,6 +29,7 @@ final class WelcomeWindowController {
     }
 
     func show() {
+        if let window { AppPresence.follow(window) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

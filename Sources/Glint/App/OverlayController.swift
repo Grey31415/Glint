@@ -38,6 +38,13 @@ final class OverlayController: ObservableObject {
     /// menu's height has to draw it too, or the surface would not grow to make
     /// room for it.
     @Published private(set) var composingThreadID: String?
+    /// True when the menu was opened from the keyboard.
+    ///
+    /// The cursor rules cannot apply to it: nothing is hovering, so the
+    /// proximity test would shut it again on the very next poll. It stays open
+    /// until the shortcut is pressed again, or until the cursor visits it and
+    /// leaves, at which point ordinary hover behaviour takes back over.
+    @Published private(set) var pinnedOpen = false
 
     let model: GlintModel
     let preferences: Preferences
@@ -302,8 +309,11 @@ final class OverlayController: ObservableObject {
         // of the menu. The field is somewhere to type, not a mode to be in.
         let composing = composingThreadID != nil
         let overDot = visible && distance <= CGFloat(preferences.hoverSensitivity)
+        // Visiting a keyboard-opened menu hands it back to the cursor, so that
+        // moving away closes it like any other.
+        if pinnedOpen, live { pinnedOpen = false }
         let shouldOpen = preferences.showHoverCard && isDotVisible
-            && (overDot || (isCardOpen && live))
+            && (pinnedOpen || overDot || (isCardOpen && live))
         if shouldOpen != isCardOpen {
             if !shouldOpen, composing { setComposing(nil) }
             frozenOpen = shouldOpen ? currentOpenRect() : nil
@@ -371,6 +381,35 @@ final class OverlayController: ObservableObject {
             withAnimation(Motion.card) { frozenOpen = currentOpenRect() }
             updateInterestRect()
         }
+    }
+
+    // MARK: - Keyboard
+
+    /// Opens the menu without the cursor, or closes one already open.
+    ///
+    /// With exactly one conversation waiting there is no ambiguity about what
+    /// you came to do, so the reply field opens with it - which also activates
+    /// the app, and gives Escape something to close. With none or several, the
+    /// menu opens and stays put.
+    func toggleFromKeyboard() {
+        guard preferences.showHoverCard, isDotVisible else { return }
+        if isCardOpen {
+            pinnedOpen = false
+            setComposing(nil)
+            frozenOpen = nil
+            withAnimation(Motion.card) { isCardOpen = false }
+            updateInterestRect()
+            return
+        }
+
+        pinnedOpen = true
+        frozenOpen = currentOpenRect()
+        withAnimation(Motion.card) { isCardOpen = true }
+        updateInterestRect()
+
+        let waiting = model.cardThreads()
+        if waiting.count == 1 { setComposing(waiting[0].id) }
+        else { panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
     }
 
     /// Opens or closes the reply field.

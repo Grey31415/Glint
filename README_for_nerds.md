@@ -39,7 +39,7 @@ instructions here:
 Sources/Glint/
   Core/        InstagramFeed (model), GlintModel (counts, watermarks), Preferences
   Providers/   InstagramSource (session + polling), InstagramScript (the JS)
-  App/         panel, notch geometry, cursor tracking, status item, windows
+  App/         panel, notch geometry, cursor tracking, windows
   UI/          morphing surface, dot, menu, colour field, geometry, theme
 ```
 

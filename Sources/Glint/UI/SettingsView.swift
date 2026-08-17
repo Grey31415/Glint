@@ -10,8 +10,15 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            GlassTabBar(selection: $tab)
-                .padding(.top, SettingsMetrics.windowPadding)
+            // Bar and button are one centred row, so adding the button does not
+            // shove the tabs off centre.
+            HStack(spacing: 8) {
+                GlassTabBar(selection: $tab)
+                GlassCircleButton(symbol: "power", help: "Quit Glint") {
+                    NSApp.terminate(nil)
+                }
+            }
+            .padding(.top, SettingsMetrics.windowPadding)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: SettingsMetrics.cardSpacing) {
@@ -96,8 +103,8 @@ private struct NotificationsPane: View {
     }
 }
 
-/// A coloured dot for the connection, which is the same vocabulary the app uses
-/// on the menu bar. Reading a status word is slower than reading a colour.
+/// A coloured dot for the connection, the same vocabulary as the dot beside
+/// the notch. Reading a status word is slower than reading a colour.
 private struct StatusLight: View {
     let state: FeedState
 
@@ -218,7 +225,6 @@ private struct GeneralPane: View {
     var body: some View {
         GlassSection {
             Toggle("Launch at login", isOn: prefs.binding(\.launchAtLogin))
-            Toggle("Show menu bar item", isOn: prefs.binding(\.showStatusItem))
             Toggle("Play a sound when something new arrives", isOn: prefs.binding(\.playSoundOnNew))
         }
 
@@ -273,13 +279,15 @@ private struct AboutPane: View {
         }
     }
 
+    /// No card here. Everything else in Settings is a control that benefits
+    /// from being grouped, and this is a signature: a box around it just draws
+    /// a border round the middle of the window.
     var body: some View {
-        GlassSection {
             VStack(spacing: 0) {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
                     .frame(width: 84, height: 84)
-                    .padding(.top, 10)
+                    .padding(.top, 24)
                     .padding(.bottom, 12)
 
                 Text("Glint")
@@ -312,9 +320,8 @@ private struct AboutPane: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .padding(.top, 6)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 24)
             }
             .frame(maxWidth: .infinity)
-        }
     }
 }

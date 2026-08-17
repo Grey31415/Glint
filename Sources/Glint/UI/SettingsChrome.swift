@@ -12,6 +12,11 @@ enum SettingsMetrics {
     static let cardPadding: CGFloat = 14
     static let cardSpacing: CGFloat = 14
     static let windowPadding: CGFloat = 18
+    /// Height of the tab bar and of the round button beside it. Both derive
+    /// from this rather than being eyeballed, so they cannot drift apart.
+    static let barHeight: CGFloat = 34
+    /// Slack the bar puts around its buttons.
+    static let barInset: CGFloat = 3
 }
 
 /// Vibrancy for the window behind the cards.
@@ -143,10 +148,39 @@ struct GlassTabBar: View {
                 }
             }
         }
-        .padding(3)
+        .padding(SettingsMetrics.barInset)
         .liquidGlass(shape: shape, tint: .clear, enabled: true)
         .clipShape(shape)
         .overlay(shape.strokeBorder(Palette.rim.opacity(0.16), lineWidth: 0.6))
+    }
+}
+
+/// The round button beside the tab bar. Same glass, same height, so the two
+/// read as one row rather than a bar with something stuck next to it.
+struct GlassCircleButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(hovering ? Palette.warning : Color.secondary)
+                .frame(width: SettingsMetrics.barHeight, height: SettingsMetrics.barHeight)
+                .background {
+                    if hovering { Circle().fill(Palette.rowHover) }
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .onHover { hovering = $0 }
+        .liquidGlass(shape: Circle(), tint: .clear, enabled: true)
+        .clipShape(Circle())
+        .overlay(Circle().strokeBorder(Palette.rim.opacity(0.16), lineWidth: 0.6))
     }
 }
 
@@ -169,7 +203,7 @@ private struct TabButton: View {
             }
             .foregroundStyle(selected ? Accent.instagram.glow : Color.secondary)
             .padding(.horizontal, 13)
-            .padding(.vertical, 7)
+            .frame(height: SettingsMetrics.barHeight - SettingsMetrics.barInset * 2)
             .background {
                 if selected {
                     shape.fill(Accent.instagram.glow.opacity(0.14))

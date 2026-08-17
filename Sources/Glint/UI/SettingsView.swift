@@ -20,19 +20,29 @@ struct SettingsView: View {
             }
             .padding(.top, SettingsMetrics.windowPadding)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: SettingsMetrics.cardSpacing) {
-                    switch tab {
-                    case .notifications: NotificationsPane(model: model, prefs: prefs, tick: tick)
-                    case .appearance:    AppearancePane(prefs: prefs)
-                    case .general:       GeneralPane(model: model, prefs: prefs)
-                    case .about:         AboutPane()
+            // About is short and fixed, so it sits in the space rather than
+            // scrolling in it. Inside a ScrollView the content takes its
+            // natural height and pins to the top, which left it riding high.
+            if tab == .about {
+                AboutPane()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, SettingsMetrics.windowPadding)
+                    .padding(.bottom, SettingsMetrics.windowPadding)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: SettingsMetrics.cardSpacing) {
+                        switch tab {
+                        case .notifications: NotificationsPane(model: model, prefs: prefs, tick: tick)
+                        case .appearance:    AppearancePane(prefs: prefs)
+                        case .general:       GeneralPane(model: model, prefs: prefs)
+                        case .about:         EmptyView()
+                        }
                     }
+                    .padding(.horizontal, SettingsMetrics.windowPadding)
+                    .padding(.bottom, SettingsMetrics.windowPadding)
                 }
-                .padding(.horizontal, SettingsMetrics.windowPadding)
-                .padding(.bottom, SettingsMetrics.windowPadding)
+                .scrollIndicators(.never)
             }
-            .scrollIndicators(.never)
         }
         .frame(width: 580, height: 560)
         .background(VibrantBackground().ignoresSafeArea())
@@ -284,10 +294,13 @@ private struct AboutPane: View {
     /// a border round the middle of the window.
     var body: some View {
             VStack(spacing: 0) {
+                // Spacers rather than fixed padding, so it stays centred
+                // whatever the window height is.
+                Spacer(minLength: 0)
+
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
                     .frame(width: 84, height: 84)
-                    .padding(.top, 24)
                     .padding(.bottom, 12)
 
                 Text("Glint")
@@ -320,7 +333,8 @@ private struct AboutPane: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .padding(.top, 6)
-                    .padding(.bottom, 24)
+
+                Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
     }

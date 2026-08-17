@@ -135,11 +135,6 @@ final class Preferences: ObservableObject {
         set { store("playSoundOnNew", newValue) }
     }
 
-    var showStatusItem: Bool {
-        get { value("showStatusItem", true) }
-        set { store("showStatusItem", newValue) }
-    }
-
     // MARK: - Polling
 
     var pollInterval: Double {

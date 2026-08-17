@@ -50,8 +50,8 @@ a quieter way to keep up.
      find /Applications/Glint.app -exec xattr -d com.apple.quarantine {} \; 2>/dev/null
 
 5. Glint lives beside the notch and has no Dock icon. Settings open
-   automatically on first launch; after that, use the menu bar item or
-   right-click the dot.
+   automatically on first launch. After that, right-click the dot, or
+   open Glint again from Spotlight.
 
 Privacy
 -------

@@ -7,7 +7,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var model: GlintModel!
     private var overlay: OverlayController!
-    private var statusItem: StatusItemController!
     private var settings: SettingsWindowController?
     private var welcome: WelcomeWindowController?
 
@@ -18,14 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.onOpenSettings = { [weak self] in self?.openSettings() }
         overlay.onQuit = { NSApp.terminate(nil) }
 
-        statusItem = StatusItemController(
-            model: model,
-            preferences: preferences,
-            onOpenSettings: { [weak self] in self?.openSettings() })
-
         model.start()
         overlay.start()
-        statusItem.start()
 
         // A fresh install explains itself before asking for anything. Glint
         // wants an Instagram sign-in, which deserves a straight answer about
@@ -40,8 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Launching Glint again - from Spotlight, Finder or the Dock - opens
     /// Settings rather than doing nothing.
     ///
-    /// This is the way back in when both the menu bar item and the dot are
-    /// switched off, which is exactly the configuration hidden mode is for.
+    /// This is the only way back in when the dot is hidden, which is exactly
+    /// what hidden mode is for, so it is not optional.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         openSettings()
         return true
@@ -50,7 +43,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         overlay?.stop()
         model?.stop()
-        statusItem?.stop()
     }
 
     func showWelcome() {

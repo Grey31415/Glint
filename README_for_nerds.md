@@ -172,8 +172,47 @@ Cursor position is polled rather than observed, because a window with
 `ignoresMouseEvents = true` stops receiving mouse-moved events, and that flag is
 on most of the time. The poll idles at 8 Hz and steps up to 100 Hz near the dot.
 
-**Hidden mode** parks the dot at `notchRect.midX` - a region of the display with
-no pixels - so it is genuinely invisible rather than merely small.
+**Hidden mode** parks the dot at `notchRect.midX`, a region of the display with
+no pixels, so it is genuinely invisible rather than merely small.
+
+### Why hidden mode does not follow Do Not Disturb
+
+It should. Glint cannot read your Focus, and the reason is worth writing down
+so nobody spends another afternoon rediscovering it.
+
+`INFocusStatusCenter` is the public API and it works exactly as documented, on
+apps that are allowed to call it. Calling `requestAuthorization` needs the
+`com.apple.developer.focus-status` entitlement, which only a provisioning
+profile from a paid Apple Developer account can carry.
+
+Three things were confirmed here rather than assumed:
+
+- **Without the entitlement, TCC does not deny the request. It kills the
+  process.** `__TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION__`, SIGABRT, on launch.
+  `NSFocusStatusUsageDescription` in the bundle is necessary and nowhere near
+  sufficient.
+- **An ad-hoc signature cannot carry the entitlement either.** A binary
+  claiming it does not launch at all, with no output and no crash report.
+- **Reading the status without authorisation is not merely unauthorised, it is
+  blind.** With Do Not Disturb switched on, `focusStatus.isFocused` returns
+  `false` rather than `nil`, which is indistinguishable from no Focus being on.
+  There is no quiet fallback where it half works.
+
+Glint also never appears under System Settings, Privacy & Security, Focus.
+That list is built from apps that have legally requested access, and the
+request dies before TCC records anything, so there is no row to switch on and
+no way to add one by hand.
+
+Two routes exist if this is ever worth revisiting. `SetFocusFilterIntent`
+inverts the direction: macOS pushes to the app rather than the app reading, so
+it may not need the entitlement, but it does nothing until the user configures
+Glint per Focus in System Settings, which rules it out as a default. Or read
+`~/Library/DoNotDisturb/DB/Assertions.json` directly, which works without a
+developer account and needs Full Disk Access, an absurd thing to demand for one
+boolean.
+
+The honest fix is the paid account, which is the same thing that would let the
+app be notarised.
 
 ## One surface, not two
 

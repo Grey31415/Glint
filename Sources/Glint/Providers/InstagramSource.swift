@@ -159,8 +159,10 @@ final class InstagramSource: ObservableObject {
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
 
         let bridge = NavigationBridge(
+            allowed: HostAllowlist.instagram,
             onFinished: { [weak self] url in self?.handleNavigation(to: url) },
-            onFailed: { [weak self] error in self?.handleFailure(error) })
+            onFailed: { [weak self] error in self?.handleFailure(error) },
+            onBlocked: { [weak self] url in self?.handleBlocked(url) })
         self.bridge = bridge
 
         let view = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 900),
@@ -441,6 +443,19 @@ final class InstagramSource: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.poll() }
     }
 
+    /// A main-frame navigation to something that is not Instagram was refused.
+    ///
+    /// Clearing `hasLoadedPage` is the part that matters: it stops `poll()` and
+    /// `send()`, so neither Glint's reading script nor a typed reply can run
+    /// against a page that arrived from somewhere else. There is deliberately no
+    /// reload here - if Instagram really is redirecting, retrying immediately
+    /// would spin. The reload timer comes back around on its own.
+    private func handleBlocked(_ url: URL) {
+        hasLoadedPage = false
+        if Self.debugLogging { NSLog("[Glint:blocked] %@", url.host ?? url.absoluteString) }
+        diagnostics = "Blocked a page load from \(url.host ?? "an unknown host")"
+    }
+
     private func handleFailure(_ error: Error) {
         let nsError = error as NSError
         if Self.debugLogging {
@@ -504,34 +519,6 @@ final class InstagramSource: ObservableObject {
             }
         loginWindow = controller
         controller.show()
-    }
-}
-
-/// Bridges WebKit's `@objc` navigation delegate onto the main actor. WebKit
-/// already calls these on the main thread; `assumeIsolated` states that.
-private final class NavigationBridge: NSObject, WKNavigationDelegate {
-    private let onFinished: @MainActor (URL?) -> Void
-    private let onFailed: @MainActor (Error) -> Void
-
-    init(onFinished: @escaping @MainActor (URL?) -> Void,
-         onFailed: @escaping @MainActor (Error) -> Void) {
-        self.onFinished = onFinished
-        self.onFailed = onFailed
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        let url = webView.url
-        MainActor.assumeIsolated { onFinished(url) }
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        MainActor.assumeIsolated { onFailed(error) }
-    }
-
-    func webView(_ webView: WKWebView,
-                 didFailProvisionalNavigation navigation: WKNavigation!,
-                 withError error: Error) {
-        MainActor.assumeIsolated { onFailed(error) }
     }
 }
 

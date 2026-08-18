@@ -219,7 +219,7 @@ final class InstagramSource: ObservableObject {
         // last round of debugging looking in the wrong place.
         guard let webView else { return .failed("No web view") }
         guard hasLoadedPage else { return .failed("Page still loading, try again in a moment") }
-        guard let host = webView.url?.host, host.contains("instagram.com") else {
+        guard HostAllowlist.allows(webView.url, HostAllowlist.instagram) else {
             return .failed("Page is on \(webView.url?.host ?? "nothing"), not instagram.com")
         }
 
@@ -274,7 +274,7 @@ final class InstagramSource: ObservableObject {
         // Relative fetches cannot resolve until a real page is loaded - on
         // about:blank they fail with "URL is not valid", which is noise rather
         // than a fault worth showing.
-        guard hasLoadedPage, let host = webView.url?.host, host.contains("instagram.com") else {
+        guard hasLoadedPage, HostAllowlist.allows(webView.url, HostAllowlist.instagram) else {
             diagnostics = "Waiting for instagram.com to load…"
             if Self.debugLogging {
                 NSLog("[Glint:wait] loaded=%@ url=%@ loading=%@",
@@ -410,7 +410,7 @@ final class InstagramSource: ObservableObject {
             return
         }
         interstitialBounces = 0
-        hasLoadedPage = url.host?.contains("instagram.com") ?? false
+        hasLoadedPage = HostAllowlist.allows(url, HostAllowlist.instagram)
         if hasLoadedPage, ProcessInfo.processInfo.environment["GLINT_PROBE"] == "1", !hasProbed {
             hasProbed = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.probeTaxonomy() }

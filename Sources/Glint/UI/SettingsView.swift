@@ -248,17 +248,19 @@ private struct GeneralPane: View {
         GlassSection(title: "Privacy") {
             LabeledContent("Password") { Text("Never seen by Glint").foregroundStyle(.secondary) }
             LabeledContent("Session stored in") {
-                Text("~/Library/WebKit").foregroundStyle(.secondary).textSelection(.enabled)
+                Text("~/Library/Containers/com.grey31415.Glint")
+                    .foregroundStyle(.secondary).textSelection(.enabled)
             }
-            LabeledContent("Talks to") {
+            LabeledContent("Glint's own requests") {
                 Text("instagram.com only").foregroundStyle(.secondary)
             }
             Note("""
             You sign in on Instagram's own page, in the standard macOS web view. Your \
             password goes to Instagram and never through Glint. What is kept is the \
-            session cookie, and macOS keeps it, the same way it keeps Safari's. Glint \
-            has no account and no server. The only thing it ever sends is a reply you \
-            typed yourself. No analytics. No telemetry.
+            session cookie, in Glint's sandbox container - which is not sealed off from \
+            the rest of your Mac, the same as a browser profile. Glint has no account, \
+            no server, and no analytics of its own; because it loads Instagram's real \
+            page, Instagram's ad and analytics resources load with it.
             """)
             HStack {
                 Button("Show what Glint is connected to") {

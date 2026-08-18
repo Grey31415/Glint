@@ -25,19 +25,21 @@ struct WelcomeView: View {
                 Point(symbol: "lock.laptopcomputer",
                       title: "The session stays on this Mac",
                       detail: """
-                      macOS keeps the login cookie for Glint in ~/Library/WebKit and \
-                      ~/Library/HTTPStorages, the same way it keeps Safari's. Glint has no \
-                      account and no server. There is nowhere to send it.
+                      macOS keeps the login cookie inside Glint's sandbox container, under \
+                      ~/Library/Containers. Glint has no account and no server, so there is \
+                      nowhere to send it. That container is not a vault, though: any app you \
+                      run as yourself can read it, the same as a browser profile.
                       """)
 
                 Point(symbol: "arrow.left.arrow.right",
-                      title: "It only ever talks to instagram.com",
+                      title: "Glint adds no tracking of its own",
                       detail: """
-                      Glint makes the same two requests the website makes for itself, your \
+                      It makes the same two requests the website makes for itself, your \
                       inbox and your activity feed, and reads the numbers out of the \
-                      replies. The one thing it ever sends is a reply you have typed \
-                      yourself, at the moment you press return. No analytics. No \
-                      telemetry. No other destination.
+                      replies. No analytics, no telemetry, and the only thing it ever sends \
+                      is a reply you typed. It does load Instagram's real page to do this, \
+                      so Instagram's own ad and analytics resources load with it, exactly \
+                      as they would in a browser tab.
                       """)
 
                 Point(symbol: "xmark.circle",

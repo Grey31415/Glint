@@ -27,11 +27,17 @@ struct OverlayRootView: View {
 
     private var layout: OverlayLayout { controller.layout }
 
-    /// True when at least one waiting item is an actual message rather than a
-    /// reaction or a like. Drives whether the surface burns full colour.
-    private var hasSubstance: Bool {
-        model.summaries.contains { $0.count > 0 && ($0.kind == .messages || $0.kind == .comments) }
-    }
+    /// True when anything the user asked to be told about is waiting. Drives
+    /// whether the surface burns full colour.
+    ///
+    /// It used to ask instead whether one of the waiting items was a message or
+    /// a comment, which meant a dot showing a count of tags, requests, likes or
+    /// follows sat there in the quiet grey - the number said something had
+    /// arrived and the colour said nothing had. Enabling a category is the user
+    /// saying that category matters; deciding a second time that it does not is
+    /// not ours to make. This is the same condition the glow already used, so
+    /// the two can no longer disagree.
+    private var hasSubstance: Bool { model.total > 0 }
 
     private var accent: Accent { hasSubstance ? .current : .around(prefs.quietTint) }
     private var openAmount: CGFloat { controller.isCardOpen ? 1 : 0 }

@@ -40,6 +40,9 @@ struct DotContentView: View {
                         .shadow(color: .black.opacity(0.35), radius: 0.5 * scale, y: 0.5)
                         .fixedSize()
                         .lineLimit(1)
+                        // Lifts the digits off the line box's descender space,
+                        // which they never use, and onto the dot's real centre.
+                        .offset(y: -DotGeometry.countLift(height: metric))
                         .transition(.scale(scale: 0.4).combined(with: .opacity))
                 }
             }

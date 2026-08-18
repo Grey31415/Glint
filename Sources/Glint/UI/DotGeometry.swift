@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -15,14 +16,55 @@ enum DotGeometry {
     }
 
     static func fontSize(height: CGFloat) -> CGFloat { height * 0.62 }
-    /// SF Rounded Bold advances a touch under 0.62em; erring high keeps text
-    /// from ever overflowing the capsule.
-    static func digitWidth(height: CGFloat) -> CGFloat { fontSize(height: height) * 0.64 }
 
-    /// Width of a capsule holding `digits` characters. Also used to size the
-    /// colour field, which is why it takes a count rather than a string.
+    /// The font the number is actually drawn in, so the capsule can be sized
+    /// from the text rather than from a guess at its width.
+    ///
+    /// Monospaced digits are part of the identity here, not a detail: the
+    /// capsule is sized from this and the glyphs have to keep to it, or a count
+    /// ticking from 11 to 18 would breathe the whole dot in and out.
+    static func countFont(height: CGFloat) -> NSFont {
+        let size = fontSize(height: height)
+        let base = NSFont.systemFont(ofSize: size, weight: .bold)
+        let rounded = base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor
+        let tabular = rounded.addingAttributes([
+            .featureSettings: [[NSFontDescriptor.FeatureKey.typeIdentifier: kNumberSpacingType,
+                                NSFontDescriptor.FeatureKey.selectorIdentifier: kMonospacedNumbersSelector]]
+        ])
+        return NSFont(descriptor: tabular, size: size) ?? base
+    }
+
+    /// What the number measures on screen.
+    ///
+    /// This used to be `digits * fontSize * 0.64`, described as erring high. It
+    /// erred low - SF Rounded Bold advances 0.71em - so every extra digit ate
+    /// into the padding instead of widening the pill, and a three-character
+    /// count sat in a capsule cut for two.
+    static func textWidth(_ text: String, height: CGFloat) -> CGFloat {
+        (text as NSString).size(withAttributes: [.font: countFont(height: height)]).width
+    }
+
+    /// How far the number has to rise to sit in the middle of the dot.
+    ///
+    /// Text is centred on its line box, and a line box reserves room for
+    /// descenders that "42" has no use for, so centring the box leaves the
+    /// digits sitting low. Centring their cap-height box instead is what the
+    /// eye is actually asking for.
+    static func countLift(height: CGFloat) -> CGFloat {
+        let font = countFont(height: height)
+        return (font.ascender + font.descender - font.capHeight) / 2
+    }
+
+    /// Width of a capsule holding `text`, padded so the digits never crowd the
+    /// ends. Below two characters the padding alone already makes a pill.
+    static func capsuleWidth(text: String, height: CGFloat) -> CGFloat {
+        max(height, textWidth(text, height: height) + height * 0.70)
+    }
+
+    /// The widest the dot can get, for the hit region. Nines because they are
+    /// no narrower than any other digit and the font is tabular anyway.
     static func capsuleWidth(digits: Int, height: CGFloat) -> CGFloat {
-        max(height, CGFloat(digits) * digitWidth(height: height) + height * 0.70)
+        capsuleWidth(text: String(repeating: "9", count: max(digits, 0)), height: height)
     }
 
     /// Height with the cursor far away: a quiet dot is a small circle, one with
@@ -33,7 +75,7 @@ enum DotGeometry {
 
     static func restWidth(countText: String, count: Int, height: CGFloat, showCount: Bool) -> CGFloat {
         guard showCount, count > 0 else { return height * 0.60 }
-        return capsuleWidth(digits: countText.count, height: height)
+        return capsuleWidth(text: countText, height: height)
     }
 
     /// Unscaled width under the cursor. With no mark to make room for, a lit
@@ -41,7 +83,7 @@ enum DotGeometry {
     /// magnifies without also reflowing the shape.
     static func activeWidth(countText: String, count: Int, height: CGFloat) -> CGFloat {
         guard count > 0 else { return height * 0.60 }
-        return capsuleWidth(digits: countText.count, height: height)
+        return capsuleWidth(text: countText, height: height)
     }
 
     static func renderHeight(rest: CGFloat, full: CGFloat, progress: CGFloat, scale: CGFloat) -> CGFloat {

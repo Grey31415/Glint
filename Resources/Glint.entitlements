@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Confines Glint itself. It does not put the stored session out of reach
+	     of other apps you run - a third-party container is readable by any
+	     process running as you - but it does mean the app that asks for your
+	     Instagram session cannot read the rest of your home directory. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- The web view. Glint opens no listening sockets and needs nothing else:
+	     no file access, no camera, no address book. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

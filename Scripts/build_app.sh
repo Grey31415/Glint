@@ -42,8 +42,14 @@ cp "$ROOT/Resources/Glint.icns" "$APP/Contents/Resources/Glint.icns"
 
 # Ad-hoc signature: enough to run locally. It changes on every build, so macOS
 # treats each rebuild as a new app for permission purposes.
-echo "==> codesign (ad-hoc, $BUNDLE_ID)"
-codesign --force --sign - --identifier "$BUNDLE_ID" --timestamp=none "$APP"
+#
+# The sandbox entitlements ride along on the ad-hoc signature - neither of them
+# needs a provisioning profile. They move the website data store and the
+# preferences into ~/Library/Containers/<bundle id>/, so the first launch after
+# a previously unsandboxed build asks for sign-in again.
+echo "==> codesign (ad-hoc, sandboxed, $BUNDLE_ID)"
+codesign --force --sign - --identifier "$BUNDLE_ID" --timestamp=none \
+  --entitlements "$ROOT/Resources/Glint.entitlements" "$APP"
 
 if [[ "${INSTALL:-0}" == "1" ]]; then
   echo "==> installing to /Applications"

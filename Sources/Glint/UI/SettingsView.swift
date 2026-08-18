@@ -439,6 +439,12 @@ private struct GeneralPane: View {
                           range: 5...120, unit: "s", standard: Defaults.pollInterval)
             SettingSlider(title: "Reload session every", value: prefs.binding(\.webReloadMinutes),
                           range: 5...60, unit: "m", standard: Defaults.webReloadMinutes)
+            Note("""
+            Instagram usually tells Glint the moment something arrives, and then \
+            this is only the fallback: it stretches out while nothing is happening \
+            and snaps back the moment something does. Opening the menu always reads \
+            afresh.
+            """)
         }
 
         // The privacy facts sit in this card rather than their own: they answer
@@ -464,6 +470,12 @@ private struct GeneralPane: View {
                         } ?? "never"))
                         if model.source.isStale {
                             Text("· overdue").foregroundStyle(Palette.warning)
+                        }
+                        // Says which of the two ways news arrives is in use.
+                        // Without it a long gap between syncs reads as a fault
+                        // rather than as an account nobody has written to.
+                        if model.source.isRealtime {
+                            Text("· live")
                         }
                     }
                     .font(.caption2)

@@ -481,4 +481,141 @@ enum InstagramScript {
       return 'ok';
     })()
     """#
+
+    /// Watches the realtime traffic the page already generates, so a new
+    /// message can be noticed rather than waited for.
+    ///
+    /// The page loaded here is Instagram's own web client, and it keeps a
+    /// socket open for direct messages: everything Glint polls for has already
+    /// arrived in the tab, seconds before the next poll asks. This hook turns
+    /// that into a single word posted to the native side, which then runs the
+    /// ordinary read.
+    ///
+    /// Nothing here parses a frame. The payloads are packed binary whose shape
+    /// rotates with Instagram's releases, and a parser for them would be a
+    /// second `doc_id` to maintain; all this needs to know is *that* something
+    /// happened. Every branch is wrapped, because a hook that throws takes the
+    /// page - and with it the session - down with it.
+    ///
+    /// Injected at document start into the page world, so it is in place before
+    /// the client's own scripts capture these globals.
+    static let realtimeHook = #"""
+    (function () {
+      'use strict';
+      const post = function (kind) {
+        try { window.webkit.messageHandlers.glintRealtime.postMessage(kind); } catch (e) {}
+      };
+
+      // Frames arrive in bursts - presence, typing, delivery receipts - and the
+      // native side answers all of them with the same one read, so coalescing
+      // here keeps the bridge quiet.
+      // Only the size goes across, not the frame. Keepalives and presence run
+      // to a few bytes and a real delivery does not, which is the whole of what
+      // the native side needs to tell a busy socket from a new message - and it
+      // stays true across payload formats in a way a parser would not.
+      const sizeOf = function (event) {
+        try {
+          const d = event && event.data;
+          if (typeof d === 'string') return d.length;
+          if (d && typeof d.byteLength === 'number') return d.byteLength;
+          if (d && typeof d.size === 'number') return d.size;
+        } catch (e) {}
+        return 0;
+      };
+
+      // Coalesced on a trailing edge rather than a leading one, and reporting
+      // the largest frame of the burst: the interesting frame is rarely the
+      // first, and the ping either side of it should not stand in for it.
+      let pending = -1;
+      let timer = null;
+      const beat = function (size) {
+        pending = Math.max(pending, size);
+        if (timer) return;
+        timer = setTimeout(function () {
+          timer = null;
+          const n = pending;
+          pending = -1;
+          post('frame:' + n);
+        }, 400);
+      };
+
+      // Only channels the page opens for itself. Glint's own reads go to
+      // /api/v1/direct_v2/, which is deliberately not matched: a hook that
+      // fired on those would poll in a loop.
+      const watched = function (url) {
+        const u = String(url || '');
+        return u.indexOf('edge-chat') >= 0 || u.indexOf('/realtime') >= 0 ||
+               u.indexOf('/async/') >= 0 || u.indexOf('pubsub') >= 0;
+      };
+
+      // Nothing below tags what it wraps, and there is no need to: a user
+      // script injected at document start runs exactly once per document, so
+      // there is no second run for a guard to catch. Earlier versions marked
+      // each patched global with a property saying so, which worked and left
+      // Glint's name sitting on three native objects for any script on the
+      // page to enumerate.
+      try {
+        const Native = window.WebSocket;
+        if (Native) {
+          // A Proxy rather than a subclass or a wrapping function: the client
+          // reads WebSocket.OPEN off the constructor and tests instanceof, and
+          // both survive a construct trap while neither survives a wrapper.
+          // A Proxy over a native constructor also still stringifies as
+          // [native code], which a wrapper does not.
+          window.WebSocket = new Proxy(Native, {
+            construct: function (target, args) {
+              const socket = new target(...args);
+              try {
+                socket.addEventListener('open',    function () { post('open'); });
+                socket.addEventListener('close',   function () { post('close'); });
+                socket.addEventListener('error',   function () { post('close'); });
+                socket.addEventListener('message', function (e) { beat(sizeOf(e)); });
+              } catch (e) {}
+              return socket;
+            }
+          });
+        }
+      } catch (e) {}
+
+      // Instagram has moved parts of this traffic off the socket before, and
+      // the day it does again the socket simply goes quiet - which looks
+      // exactly like an idle account. These two cover that.
+      try {
+        const nativeFetch = window.fetch;
+        if (nativeFetch) {
+          window.fetch = function (input, init) {
+            try { if (watched((input && input.url) || input)) beat(1e9); } catch (e) {}
+            return nativeFetch.apply(this, arguments);
+          };
+        }
+      } catch (e) {}
+
+      try {
+        const proto = window.XMLHttpRequest && window.XMLHttpRequest.prototype;
+        if (proto) {
+          // A WeakSet rather than a flag on the request, for the same reason:
+          // the requests are the page's own objects and should come back from
+          // this untouched. It also cannot leak, since the entry goes when the
+          // request does.
+          const interesting = new WeakSet();
+          const open = proto.open;
+          proto.open = function (method, url) {
+            try { if (watched(url)) interesting.add(this); } catch (e) {}
+            return open.apply(this, arguments);
+          };
+          const send = proto.send;
+          proto.send = function () {
+            try {
+              if (interesting.has(this)) {
+                this.addEventListener('load', function () { beat(1e9); });
+              }
+            } catch (e) {}
+            return send.apply(this, arguments);
+          };
+        }
+      } catch (e) {}
+
+      post('hello');
+    })();
+    """#
 }

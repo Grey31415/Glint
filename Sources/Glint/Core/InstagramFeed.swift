@@ -139,6 +139,50 @@ struct DirectThread: Identifiable, Equatable {
     /// How many unread messages the row is not showing.
     var hiddenMessages: Int { max(0, unreadCount - messages.count) }
 
+    /// How much this conversation is asking of you, in messages rather than in
+    /// conversations. Instagram counts unread *threads*, which is why three
+    /// messages from one person used to put a 1 on the dot; what is waiting is
+    /// three things to read, whoever wrote them.
+    ///
+    /// Never zero for an unread thread: where Instagram gives no run to count,
+    /// the newest item stands in for it.
+    var attentionCount: Int { isUnread ? max(unreadCount, 1) : 0 }
+
+    /// The same conversation with everything you have already answered taken
+    /// out of it.
+    ///
+    /// Replying is not reading - Instagram leaves `last_seen_at` where it was
+    /// until you open the thread properly - so the unread run still holds the
+    /// message you just answered. Without this, somebody writing again brought
+    /// their previous message back onto the card underneath your own reply to
+    /// it, which reads as though the answer had not been sent.
+    ///
+    /// The messages beyond the script's cap are the *oldest* of the run, so a
+    /// watermark that falls inside the visible window is past them too, and the
+    /// count can be taken from what is left. A watermark older than anything
+    /// visible says nothing about them, and the count stands.
+    ///
+    /// Trimming to nothing also drops `isUnread`. Instagram still calls the
+    /// thread unread and will until you open it, but nothing in it is waiting
+    /// on you any more, and every count and marker downstream reads that flag
+    /// to decide whether something is.
+    func answered(upTo when: Date) -> DirectThread {
+        let kept = messages.filter { $0.date > when }
+        guard kept.count != messages.count else { return self }
+        return DirectThread(id: id,
+                            title: title,
+                            fullName: fullName,
+                            preview: preview,
+                            kind: kind,
+                            isUnread: isUnread && !kept.isEmpty,
+                            isMine: isMine,
+                            isGroup: isGroup,
+                            isMuted: isMuted,
+                            date: date,
+                            messages: kept,
+                            unreadCount: kept.count)
+    }
+
     /// Which bucket this thread counts toward, if unread.
     var bucket: ActivityKind {
         kind == .reaction ? .reactions : .messages

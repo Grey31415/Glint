@@ -133,10 +133,14 @@ final class GlintModel: ObservableObject {
     /// means switching either setting takes effect on the spot, without waiting
     /// for the next poll.
     private var visibleThreads: [DirectThread] {
-        feed.threads.filter { thread in
-            if preferences.ignoreMuted, thread.isMuted { return false }
-            if preferences.ignoreGroups, thread.isGroup { return false }
-            return true
+        feed.threads.compactMap { thread in
+            if preferences.ignoreMuted, thread.isMuted { return nil }
+            if preferences.ignoreGroups, thread.isGroup { return nil }
+            // Trimmed here rather than at any of the places that read it, so
+            // the card, the count and the row's own "and 3 more" can never
+            // disagree about what is still waiting.
+            guard let when = answered[thread.id] else { return thread }
+            return thread.answered(upTo: when)
         }
     }
 
@@ -145,8 +149,12 @@ final class GlintModel: ObservableObject {
     /// read straight through.
     func rawCount(for kind: ActivityKind) -> Int {
         switch kind {
-        case .messages:  return countedThreads.filter { $0.isUnread && $0.bucket == .messages }.count
-        case .reactions: return countedThreads.filter { $0.isUnread && $0.bucket == .reactions }.count
+        // Summed rather than counted: the dot says how much is waiting, and
+        // three messages from one person are three things to read.
+        case .messages:  return countedThreads.filter { $0.bucket == .messages }
+                                              .reduce(0) { $0 + $1.attentionCount }
+        case .reactions: return countedThreads.filter { $0.bucket == .reactions }
+                                              .reduce(0) { $0 + $1.attentionCount }
         default:         return feed.count(for: kind)
         }
     }
@@ -300,8 +308,17 @@ final class GlintModel: ObservableObject {
     }
 
     /// What you sent into this thread, oldest first.
+    ///
+    /// Only while it is still the last thing that happened. The answer is shown
+    /// under the message it answers, and once they have written again it is
+    /// under a message it has nothing to do with - which reads as a reply to
+    /// the wrong thing, or as one that never went. Their newer message is what
+    /// the row is about by then.
     func replies(to threadID: String) -> [SentReply] {
-        sentReplies[threadID] ?? []
+        let sent = sentReplies[threadID] ?? []
+        guard let thread = visibleThreads.first(where: { $0.id == threadID }),
+              let newest = thread.messages.map(\.date).max() else { return sent }
+        return sent.filter { $0.date > newest }
     }
 
     /// Wakes up when the oldest answer on the card is due to leave.
@@ -377,8 +394,11 @@ final class GlintModel: ObservableObject {
 
         if InstagramSource.debugLogging {
             let rows = cardThreads()
+            // Per row: how many messages it is contributing to the number on
+            // the dot, and how many of them the card can actually show.
             NSLog("[Glint:card] total=%d rows=%d %@", newTotal, rows.count,
-                  rows.map { "\($0.title)/\($0.kind.rawValue)\($0.isUnread ? "*" : "")" }
+                  rows.map { "\($0.title)/\($0.kind.rawValue)\($0.isUnread ? "*" : "")"
+                             + " n=\($0.attentionCount) shown=\($0.messages.count)" }
                       .joined(separator: ", "))
         }
     }
@@ -434,6 +454,7 @@ final class GlintModel: ObservableObject {
     }
 
     func refresh() { source.refresh() }
+    func refreshForViewing() { source.refreshForViewing() }
 
     /// Replies in an existing thread. The one thing Glint writes.
     func send(_ text: String, to thread: DirectThread) async -> SendResult {

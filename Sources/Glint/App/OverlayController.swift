@@ -319,6 +319,7 @@ final class OverlayController: ObservableObject {
         let shouldOpen = preferences.showHoverCard && isDotVisible
             && (pinnedOpen || overDot || (isCardOpen && live))
         if shouldOpen != isCardOpen {
+            if shouldOpen { model.refreshForViewing() }
             if !shouldOpen, composing { setComposing(nil) }
             frozenOpen = shouldOpen ? currentOpenRect() : nil
             withAnimation(Motion.card) { isCardOpen = shouldOpen }
@@ -407,6 +408,7 @@ final class OverlayController: ObservableObject {
         }
 
         pinnedOpen = true
+        model.refreshForViewing()
         frozenOpen = currentOpenRect()
         withAnimation(Motion.card) { isCardOpen = true }
         updateInterestRect()

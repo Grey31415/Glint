@@ -31,6 +31,9 @@ final class InstagramSource: ObservableObject {
     @Published private(set) var lastUpdate: Date?
     /// Whether this Mac has a route to the internet at all.
     @Published private(set) var isOnline = true
+    /// Whether the page's own realtime channel is up, and Glint is therefore
+    /// reading because something arrived rather than because a timer expired.
+    @Published private(set) var isRealtime = false
 
     /// True when the last successful poll is old enough that the numbers on the
     /// dot should not be taken at face value.
@@ -41,7 +44,10 @@ final class InstagramSource: ObservableObject {
     /// itself stale fifteen seconds later.
     var isStale: Bool {
         guard let lastUpdate else { return true }
-        let window = max(preferences.pollInterval * 3, 90)
+        // Three of whatever gap is actually being kept, not three of the one in
+        // Settings: with the realtime hook up the heartbeat is minutes apart on
+        // purpose, and measuring against the slider would call that overdue.
+        let window = max(pollInterval * 3, 90)
         return Date().timeIntervalSince(lastUpdate) > window
     }
 
@@ -61,6 +67,19 @@ final class InstagramSource: ObservableObject {
     private var running = false
     /// Consecutive failed polls, which set how long to wait before the next one.
     private var failures = 0
+    private var realtime: RealtimeBridge?
+    /// A poll queued by the realtime hook, waiting out its debounce.
+    private var realtimeTimer: Timer?
+    /// When a poll last actually left, whatever asked for it. The floor under
+    /// realtime-triggered reads is measured from this.
+    private var lastPoll: Date?
+    /// When the feed last came back different. Quiet stretches widen the gap
+    /// between heartbeats; anything new narrows it again.
+    private var lastChange: Date?
+    /// Identity of the feed as last seen, over the fields that mean something.
+    /// `InstagramFeed` is `Equatable`, but items without an id of their own get
+    /// a fresh `UUID`, so comparing whole feeds reports every poll as a change.
+    private var signature = ""
     /// True while the display is asleep or the screen is locked. Nobody can see
     /// the dot, so nothing needs fetching.
     private var dormant = false
@@ -103,16 +122,33 @@ final class InstagramSource: ObservableObject {
             DistributedNotificationCenter.default().removeObserver(observer)
         }
         sleepObservers = []
+        realtimeTimer?.invalidate(); realtimeTimer = nil
         if let webView {
             webView.stopLoading()
+            webView.configuration.userContentController
+                .removeScriptMessageHandler(forName: RealtimeBridge.name)
             HiddenWebHost.shared.release(webView)
         }
         webView = nil
         bridge = nil
+        realtime = nil
+        isRealtime = false
     }
 
     func refresh() {
         guard running else { return }
+        poll()
+    }
+
+    /// A read because somebody is looking, rather than because a timer expired.
+    ///
+    /// The heartbeat stretches to minutes on a quiet account, so the menu would
+    /// otherwise open on numbers from several minutes ago - the one moment they
+    /// are actually being read. Rate limited, because sweeping the cursor past
+    /// the dot a few times is one gesture rather than four requests.
+    func refreshForViewing() {
+        guard running, !dormant else { return }
+        if let lastPoll, Date().timeIntervalSince(lastPoll) < 5 { return }
         poll()
     }
 
@@ -210,6 +246,18 @@ final class InstagramSource: ObservableObject {
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
 
+        // Sub-frames as well as the main one: the client has moved this traffic
+        // into an embedded document before, and a hook only in the top frame
+        // would go silent without saying so.
+        let content = WKUserContentController()
+        let realtime = RealtimeBridge { [weak self] signal in self?.realtimeSignal(signal) }
+        content.add(realtime, name: RealtimeBridge.name)
+        content.addUserScript(WKUserScript(source: InstagramScript.realtimeHook,
+                                           injectionTime: .atDocumentStart,
+                                           forMainFrameOnly: false))
+        config.userContentController = content
+        self.realtime = realtime
+
         let bridge = NavigationBridge(
             onFinished: { [weak self] url in self?.handleNavigation(to: url) },
             onFailed: { [weak self] error in self?.handleFailure(error) })
@@ -226,40 +274,148 @@ final class InstagramSource: ObservableObject {
     private func load() {
         guard let webView else { return }
         hasLoadedPage = false
+        // The socket goes with the document, and a page being torn down is not
+        // reliable about saying so. The new one announces itself.
+        isRealtime = false
         webView.load(URLRequest(url: Self.trackingURL,
                                 cachePolicy: .reloadRevalidatingCacheData,
                                 timeoutInterval: 30))
     }
 
-    /// How long until the next poll.
+    /// How long until the next poll, if nothing asks sooner.
     ///
-    /// The interval the user chose while things are working, and then doubling
-    /// up to eight times it once they are not. A session that has been signed
-    /// out or throttled does not become less signed out for being asked every
-    /// fifteen seconds; it just spends battery and gives Instagram a reason to
-    /// throttle harder.
+    /// Three things move it, in this order. Failures double it up to eight
+    /// times: a session that has been signed out or throttled does not become
+    /// less signed out for being asked every fifteen seconds, it just spends
+    /// battery and gives Instagram a reason to throttle harder. With the
+    /// realtime hook up, the timer stops being how news arrives and becomes
+    /// only the net under it, so it stretches to a minute. And failing both of
+    /// those, a feed that has not changed in a while is unlikely to change in
+    /// the next fifteen seconds either.
+    ///
+    /// Every one of these is a ceiling on waiting, never on reading: a frame
+    /// from the page, waking, or opening the menu all read immediately.
     private var pollInterval: TimeInterval {
         let base = max(preferences.pollInterval, 5)
-        return base * min(pow(2, Double(failures)), 8)
+        if failures > 0 { return base * min(pow(2, Double(failures)), 8) }
+        let raw = isRealtime ? max(base * 4, 60) : base * idleMultiplier
+        return min(raw, max(base, 300))
     }
 
-    /// Restarts the poll timer whenever the gap it should keep has changed.
-    /// Timers do not have a mutable interval, so the interval is expressed by
-    /// replacing them.
-    private func rescheduleIfNeeded(previousFailures: Int) {
-        guard running, failures != previousFailures else { return }
-        // Nothing to reschedule while dormant: waking rebuilds the timer anyway.
-        guard !dormant else { return }
-        startPollTimer()
-    }
-
-    private func startPollTimer() {
-        pollTimer?.invalidate()
-        let poll = Timer(timeInterval: pollInterval, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.poll() }
+    /// How far the gap has stretched for want of anything happening. Steps
+    /// rather than a curve, because the only thing that has to be true is that
+    /// an account nobody has written to overnight is not still being asked four
+    /// times a minute by morning.
+    private var idleMultiplier: Double {
+        guard let lastChange else { return 1 }
+        switch Date().timeIntervalSince(lastChange) {
+        case ..<120:   return 1
+        case ..<600:   return 2
+        case ..<3_600: return 4
+        default:       return 8
         }
-        RunLoop.main.add(poll, forMode: .common)
-        pollTimer = poll
+    }
+
+    /// Arms the heartbeat for one poll.
+    ///
+    /// One-shot rather than repeating: the interval now depends on when the
+    /// last change was, so it has to be recomputed each time, and timers do not
+    /// have a mutable interval. The timer re-arms itself before polling, so a
+    /// poll that returns early at one of its guards still leaves a heartbeat
+    /// behind it.
+    ///
+    /// The jitter is for Instagram's benefit rather than ours: a fleet of
+    /// clients asking on an exact cadence is a pattern worth rate limiting, and
+    /// a few seconds of scatter costs nothing.
+    private func scheduleNextPoll() {
+        pollTimer?.invalidate()
+        guard running, !dormant else { return }
+        let delay = pollInterval * Double.random(in: 0.9...1.1)
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.scheduleNextPoll()
+                self?.poll()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pollTimer = timer
+    }
+
+    // MARK: - Realtime
+
+    /// What the page's own traffic reported.
+    ///
+    /// `hello` says the hook is installed on a fresh document, `open` and
+    /// `close` track the socket, and anything else means a frame arrived. The
+    /// frame carries no information Glint can use - see `InstagramScript`
+    /// `realtimeHook` for why it is not parsed - so it is treated purely as
+    /// permission to read now instead of at the heartbeat.
+    private func realtimeSignal(_ signal: String) {
+        switch signal {
+        case "hello":
+            if Self.debugLogging { NSLog("[Glint:rt] hook installed") }
+        case "open", "close":
+            let up = signal == "open"
+            guard isRealtime != up else { return }
+            isRealtime = up
+            if Self.debugLogging { NSLog("[Glint:rt] channel %@", up ? "up" : "down") }
+            // The heartbeat means something different either side of this.
+            scheduleNextPoll()
+            // Whatever arrived while the socket was down arrived unannounced.
+            if up { queueRealtimePoll(floor: min(preferences.pollInterval, 8)) }
+        default:
+            // A frame on a channel we never saw open still proves one is there.
+            if !isRealtime {
+                isRealtime = true
+                if Self.debugLogging { NSLog("[Glint:rt] channel up (inferred)") }
+            }
+            let size = signal.split(separator: ":").last.flatMap { Int($0) } ?? 0
+            if Self.debugLogging { NSLog("[Glint:rt] frame %d", size) }
+            // A ping is not news. Everything else is, to one degree or another.
+            guard size > Self.keepaliveFrame else { return }
+            queueRealtimePoll(floor: size >= Self.significantFrame
+                              ? min(preferences.pollInterval, 8)
+                              : preferences.pollInterval)
+        }
+    }
+
+    /// Frames this size and under are the socket keeping itself alive, about
+    /// one a second, and mean nothing at all.
+    private static let keepaliveFrame = 2
+
+    /// Frames this size and over are carrying something, and get read at once.
+    /// Below it the frame is real but ambiguous - presence, typing, a receipt -
+    /// and is read no faster than the fixed timer would have, so a signal
+    /// nobody has identified yet still cannot make Glint slower than it was.
+    ///
+    /// Both numbers are measured rather than guessed; see the working notes in
+    /// `CLAUDE.md` for the distribution they came from.
+    private static let significantFrame = 64
+
+    /// Turns a burst of frames into one read.
+    ///
+    /// The debounce is for the burst a single message arrives as - the frame,
+    /// the delivery receipt, the typing indicator going away - and the floor is
+    /// how much the frame was worth: eight seconds for one carrying something,
+    /// and the whole of the old fixed interval for one that might be nothing.
+    private func queueRealtimePoll(floor: TimeInterval) {
+        guard running, !dormant, isOnline, realtimeTimer == nil else { return }
+        // A backoff that a frame can walk straight past is not a backoff. If
+        // the last few reads failed, the socket saying something happened does
+        // not make this a good moment to ask again.
+        guard failures == 0 else { return }
+        let sinceLast = lastPoll.map { Date().timeIntervalSince($0) } ?? .greatestFiniteMagnitude
+        let delay = max(0.8, floor - sinceLast)
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.realtimeTimer = nil
+                if Self.debugLogging { NSLog("[Glint:rt] read") }
+                self.poll()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        realtimeTimer = timer
     }
 
     /// Stops polling while nobody can see the dot, and catches up on waking.
@@ -295,6 +451,7 @@ final class InstagramSource: ObservableObject {
         guard running, !dormant else { return }
         dormant = true
         pollTimer?.invalidate(); pollTimer = nil
+        realtimeTimer?.invalidate(); realtimeTimer = nil
         if Self.debugLogging { NSLog("[Glint:poll] dormant") }
     }
 
@@ -304,12 +461,12 @@ final class InstagramSource: ObservableObject {
         guard running, dormant else { return }
         dormant = false
         if Self.debugLogging { NSLog("[Glint:poll] awake") }
-        startPollTimer()
+        scheduleNextPoll()
         poll()
     }
 
     private func startTimers() {
-        startPollTimer()
+        scheduleNextPoll()
 
         reloadTimer?.invalidate()
         let reload = Timer(timeInterval: preferences.webReloadMinutes * 60, repeats: true) { [weak self] _ in
@@ -417,6 +574,7 @@ final class InstagramSource: ObservableObject {
             return
         }
         inFlight = true
+        lastPoll = Date()
         webView.callAsyncJavaScript(InstagramScript.payload,
                                     arguments: [:],
                                     in: nil,
@@ -446,8 +604,9 @@ final class InstagramSource: ObservableObject {
             return
         }
 
-        let previousFailures = failures
-        defer { rescheduleIfNeeded(previousFailures: previousFailures) }
+        // Whatever this poll turns out to say, the next heartbeat is measured
+        // from here rather than from whenever the last timer happened to fire.
+        defer { scheduleNextPoll() }
 
         switch root["status"] as? String {
         case "auth":
@@ -515,6 +674,12 @@ final class InstagramSource: ObservableObject {
                 date: Self.date(fromMilliseconds: raw["ts"])))
         }
 
+        let fresh = Self.signature(of: next)
+        if fresh != signature {
+            signature = fresh
+            lastChange = Date()
+        }
+
         feed = next
         state = .ready
         lastUpdate = Date()
@@ -537,6 +702,25 @@ final class InstagramSource: ObservableObject {
         let reactions = next.unreadReactions.count
         diagnostics = "\(next.threads.count) threads · \(unread) unread · \(reactions) reaction"
             + (reactions == 1 ? "" : "s")
+    }
+
+    /// A short string that changes when the feed says something new.
+    ///
+    /// Only fields Instagram supplies go in: ids, timestamps and counts. Ones
+    /// Glint invents when a payload has none would differ on every poll, and a
+    /// feed that always looks new would hold the interval at its floor forever
+    /// - which is the fixed timer again, wearing a hat.
+    private static func signature(of feed: InstagramFeed) -> String {
+        var parts = ["\(feed.unseenDirect)", "\(feed.pendingRequests)"]
+        for thread in feed.threads {
+            parts.append("\(thread.id):\(thread.unreadCount):\(thread.date.timeIntervalSince1970)")
+        }
+        for kind in ActivityKind.allCases {
+            parts.append("\(kind.rawValue):\(feed.activityCounts[kind] ?? 0)")
+        }
+        parts.append("act:\(feed.activity.count):"
+                     + "\(feed.activity.map(\.date).max()?.timeIntervalSince1970 ?? 0)")
+        return parts.joined(separator: "|")
     }
 
     private static func date(fromMilliseconds value: Any?) -> Date {
@@ -724,6 +908,29 @@ private final class NavigationBridge: NSObject, WKNavigationDelegate {
                  didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: Error) {
         MainActor.assumeIsolated { onFailed(error) }
+    }
+}
+
+/// Carries the realtime hook's one-word reports onto the main actor.
+///
+/// Kept separate from the source itself because `WKUserContentController`
+/// retains its handlers, and an `InstagramSource` held by its own web view
+/// would never be released.
+private final class RealtimeBridge: NSObject, WKScriptMessageHandler {
+    static let name = "glintRealtime"
+
+    private let onSignal: @MainActor (String) -> Void
+
+    init(onSignal: @escaping @MainActor (String) -> Void) {
+        self.onSignal = onSignal
+    }
+
+    func userContentController(_ controller: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        // Anything but a string means the page is posting on this name for its
+        // own reasons, which is not something to act on.
+        guard let signal = message.body as? String else { return }
+        MainActor.assumeIsolated { onSignal(signal) }
     }
 }
 

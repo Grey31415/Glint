@@ -57,6 +57,64 @@ GET /api/v1/news/inbox/
 
 Both need `x-ig-app-id: 936619743392459`, the public web client's id.
 
+### When it asks
+
+For a long time it asked every fifteen seconds and nothing else. That is the
+wrong end of the problem: the page in the off-screen web view is Instagram's
+*own* client, and it holds a socket open for direct messages. Everything the
+timer went looking for had already arrived in the tab, seconds earlier.
+
+So Glint listens to that instead. A user script injected at document start
+wraps `WebSocket` in a `Proxy` - a proxy rather than a subclass, because the
+client reads `WebSocket.OPEN` off the constructor and tests `instanceof`, and
+both survive a construct trap - and posts one word to the native side for every
+frame. `fetch` and `XMLHttpRequest` are wrapped too, matched against a narrow
+allowlist (`edge-chat`, `/realtime`, `/async/`, `pubsub`), because Instagram has
+moved this traffic off the socket before and the failure mode when it does is
+silence, which looks exactly like an idle account. The allowlist deliberately
+excludes `/api/v1/`, which is where Glint's own reads go: a hook that fired on
+those would poll in a loop.
+
+**Nothing parses a frame.** The payloads are packed binary whose shape rotates
+with releases, and a parser for them would be a second `doc_id` to maintain. The
+only thing that crosses the bridge is the frame's *size*, and the only thing the
+size decides is how soon to run the ordinary read.
+
+Size, because the socket turns out to be chatty. Measured over two minutes on a
+quiet account:
+
+```
+   44 frames    1-2 bytes     keepalive, about one a second
+    8 frames   18-65 bytes    presence, typing, receipts - unidentified
+    1 frame       229 bytes   something
+```
+
+Answering every frame read the inbox every eight seconds, which is busier than
+the timer it replaced. So: 2 bytes and under is a ping and is dropped; 64 bytes
+and over is carrying something and is read within a second; in between is real
+but ambiguous and is read no faster than the old fixed interval would have. That
+last tier is the interesting one - it means a signal nobody has identified yet
+still cannot make Glint slower than it used to be, only faster.
+
+Behind all of it the timer survives as a net, and its interval is now a ceiling
+on *waiting* rather than a schedule. Sixty seconds while the socket is up. With
+no socket it starts at the interval in Settings and stretches - two minutes
+quiet doubles it, ten minutes quadruples it, an hour is eight times, capped at
+five minutes - and snaps back the moment a poll returns something different.
+Failures still double it up to eight times, and a frame cannot walk past that
+backoff; a backoff a socket can override is not a backoff. Every interval also
+gets ten percent of jitter, so a fleet of clients is not a cadence worth rate
+limiting.
+
+Reads that are not the heartbeat: opening the menu (rate limited to one per five
+seconds, since sweeping the cursor past the dot is one gesture rather than four
+requests), waking, the network coming back, and the socket reconnecting - what
+arrived while it was down arrived unannounced.
+
+`GLINT_DEBUG=1` logs all of it under `[Glint:rt]`, including the size of every
+frame, which is how the numbers above were arrived at and how to re-derive them
+when Instagram changes the shape of its chatter.
+
 ### Reactions vs messages
 
 A thread whose newest entry is `item_type: "action_log"` with
@@ -85,6 +143,39 @@ is what the app showed before.
 Verified with `GLINT_PROBE=1`, which reports per-thread item counts and the
 marker: an unread thread came back with three items newer than the mark, every
 read thread with none.
+
+That run is also what the dot counts. Instagram counts unread *conversations* -
+three messages from one person is a 1 to it - and Glint used to pass that number
+straight through, so a chat filling up while you watched never moved the number.
+The dot now sums the runs instead: three messages are three things to read,
+whoever wrote them. A conversation is still one row on the card, because a
+person is the unit the eye groups by; only the arithmetic changed.
+
+### What replying does to the run
+
+Replying is not reading. Instagram leaves `last_seen_at` exactly where it was
+until you open the thread properly, so the run still holds the message you just
+answered - and when they wrote again, their earlier message came back onto the
+card underneath your own reply to it. Two messages waiting, one of which you had
+demonstrably dealt with, with your answer sitting under the wrong one.
+
+So the reply timestamp is a second watermark, local like the read one and
+applied in the same place the muted and group filters are: everything at or
+before it is dropped from the run, and the count follows what is left. The
+messages past the script's cap are the *oldest* of the run, so a watermark
+falling inside the visible window is past them too and the remainder can be
+counted exactly; a watermark older than anything visible says nothing about
+them, and the count stands.
+
+A thread trimmed to nothing stops being unread as far as Glint is concerned -
+the flag every count and marker downstream reads. It still shows for the length
+of the linger, as a row with the conversation's preview and your answer under
+it, and then goes.
+
+Sent replies follow the same rule from the other side: an answer is shown only
+while it is still the last thing that happened. Once they have written again it
+would be sitting under a message it has nothing to do with, which reads either
+as a reply to the wrong thing or as one that never went.
 
 ### Sorting the activity feed
 
@@ -384,7 +475,12 @@ and reply the app makes.
 
 - The dot sits where the frontmost app draws its menus. Clicks pass through, but
   a long menu can overlap it - move it in Appearance, or use hidden mode.
-- Instagram counts unread *conversations*, not individual messages.
+- Instagram itself counts unread *conversations*; the dot counts messages, by
+  summing the unread run per thread. The two numbers will not agree, and
+  `unseenDirect` is kept from the payload as the sanity check on ours.
+- The realtime frame sizes above were measured without a message actually
+  arriving, so which tier a real delivery lands in is inferred rather than
+  confirmed. The middle tier exists so that being wrong about it costs nothing.
 - These are private endpoints. They can change without warning; the probe above
   is how you find out what changed.
 - Rebuilding changes the ad-hoc signature, so macOS treats it as a new app.

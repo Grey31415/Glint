@@ -30,7 +30,7 @@ final class SettingsWindowController {
         window.title = "Glint"
         window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 580, height: 560))
+        window.setContentSize(NSSize(width: SettingsMetrics.windowWidth, height: 560))
 
         // The glass has to start at the top of the window or the tab bar floats
         // under an opaque strip and the illusion breaks. The title is already

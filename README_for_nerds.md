@@ -69,6 +69,23 @@ entries arriving via `last_permanent_item` rather than `items[0]`.
 Everything else - `text`, `media`, `voice_media`, `clip`, `media_share`,
 `story_share` - counts as a real message.
 
+### The unread run inside a thread
+
+The inbox is fetched with `thread_message_limit=10`, not 1. With one item per
+thread a chat holding five unread messages arrived as a single preview line, so
+the card could say who had written but never how much - two people writing one
+line each and one person writing four looked identical.
+
+Which of those items are unread comes from `last_seen_at`, keyed by user id:
+`last_seen_at[viewer_id].timestamp` is the point you have read up to, in
+microseconds like the items themselves. Anything newer than it and not sent by
+you is waiting. Where the mark is missing the newest item alone stands in, which
+is what the app showed before.
+
+Verified with `GLINT_PROBE=1`, which reports per-thread item counts and the
+marker: an unread thread came back with three items newer than the mark, every
+read thread with none.
+
 ### Sorting the activity feed
 
 Every notification carries a `notif_name`: an exact, locale-independent key.
@@ -91,6 +108,15 @@ number had to be derived from the unseen story list alone, which disagreed with
 the aggregates in the other direction and could not be made to add up. Story
 likes arrive constantly and mean little, so dropping them beats reporting them
 wrongly.
+
+Activity stories also carry `args.profile_name` and `args.profile_id`, which is
+who did it. The card groups on that: one row per correspondent, their
+conversation and their likes and comments together, rather than a list of
+conversations followed by a tally per category in which the same person could
+appear twice. Only a one-to-one thread is matched by name - a group's title is
+several usernames joined, and matching it would file one person's likes under
+everybody. Counts Instagram badges without saying who is behind them keep a
+per-category row, or the card and the dot would stop agreeing.
 
 Counts are tallied from the unseen stories, so each equals exactly the rows
 listed beneath it. When Instagram reports nothing new but is still badging a
@@ -162,8 +188,29 @@ thread that has one.
 The linger is short by design. The card is a list of things waiting on you, and
 a conversation you have answered is finished; five minutes is long enough to
 glance back and see what you wrote, short enough that the card does not silt up.
-A dry run never records an answer - claiming a send that never left the machine
-is worse than showing nothing.
+It is a setting - *Conversations, keep after replying* - and at zero the row
+goes as soon as the send is confirmed. A dry run never records an answer -
+claiming a send that never left the machine is worse than showing nothing.
+
+Answering is remembered separately from the linger, because replying is not
+reading: Instagram goes on calling the thread unread until the next poll catches
+up, so without that memory a conversation you had dealt with would keep counting.
+The remembered date is compared against the thread's newest item, which is what
+brings the row back the moment they write again.
+
+### Answering from the menu
+
+Return sends and Shift-Return breaks the line, or the other way round -
+*Composing, Return key*. Only the inverted mode is intercepted with
+`onKeyPress`; left alone, a vertical `TextField` already does the messaging
+idiom, and handling that case would be reimplementing what works.
+
+Drafts live in `GlintModel`, not in the composer's own state, which is what
+makes both of them possible: the menu closes when the cursor leaves it, so an
+unsent sentence used to die with the view, and the invisible copy that measures
+the menu can only report the right height if it lays out the same text as the
+real field. Memory first, `UserDefaults` on a 1.5 second delay - this runs on
+every keystroke.
 
 ### Marking as read
 
@@ -171,6 +218,21 @@ Instagram will not let anything be marked read from outside without opening the
 conversation, so this is a local watermark, not a read receipt: remember the
 count, show only what arrives after. It is clamped to the real count, so reading
 the messages properly releases it - it cannot silently mute you forever.
+
+### Knowing it still works
+
+An app whose entire surface is one dot cannot fail quietly. Every failure short
+of signing out used to keep the last good counts on screen and write the reason
+into `diagnostics`, which is only visible with Settings open - a dot that has
+been wrong for an hour looked exactly like a dot that is right.
+
+Two things say otherwise now. `NWPathMonitor` watches the machine's own
+connectivity and puts the feed into `.offline` directly, rather than waiting for
+three failed polls and a backoff to infer it; polls are skipped while there is
+no route, and the network coming back clears the failure count and refreshes at
+once. And `isStale` - no successful poll in three intervals, floored at ninety
+seconds - puts a line at the foot of the menu saying when the last one was. Both
+stay quiet while things are current.
 
 ## Where the dot goes
 

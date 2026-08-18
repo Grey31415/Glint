@@ -56,6 +56,12 @@ struct DotContentView: View {
             arc(color: Palette.textLo.opacity(0.8), period: 1.1)
         case .needsAuth:
             arc(color: Palette.warning, period: 2.6)
+        case .offline:
+            // Dimmer and slower than the signed-out ring. Nothing is wrong with
+            // Glint or your account, and a dot that looks alarmed about the
+            // café wifi would be crying wolf - but a count nobody is refreshing
+            // has to look different from a live one.
+            arc(color: Palette.textLo.opacity(0.75), period: 3.6)
         default:
             EmptyView()
         }

@@ -22,7 +22,10 @@ enum Defaults {
     static let pollInterval = 15.0
     static let webReloadMinutes = 20.0
     static let quietTint = 0x8A90A2
+    static let replyLinger = 5.0
     static let alertSound = "Tink"
+    static let menuWidth = 252.0
+    static let menuHeight = 360.0
 }
 
 /// The alert sounds this Mac actually has.
@@ -109,6 +112,53 @@ final class Preferences: ObservableObject {
     var hiddenMode: Bool {
         get { value("hiddenMode", false) }
         set { store("hiddenMode", newValue) }
+    }
+
+    /// How long a conversation you have answered stays on the card, in minutes.
+    ///
+    /// The answer sits under the message it answers, because Instagram's own
+    /// echo takes the evidence away: a replied-to thread stops waiting on you,
+    /// so the row and the proof that anything was sent both disappear on the
+    /// next poll. Long enough to glance back, short enough that the card does
+    /// not silt up with finished conversations.
+    ///
+    /// At zero the row goes as soon as the send is confirmed - a failed send
+    /// keeps it either way, since nothing should vanish that did not leave.
+    var replyLinger: Double {
+        get { value("replyLinger", Defaults.replyLinger) }
+        set { store("replyLinger", min(max(newValue, 0), 30)) }
+    }
+
+    // MARK: - Composing
+
+    /// Whether Return sends the message.
+    ///
+    /// On: Return sends, Shift-Return starts a new line - the messaging idiom.
+    /// Off: Return starts a new line and Command-Return sends, which is what
+    /// people who write several sentences into a box expect. Shift-Return also
+    /// sends in that mode, since the two habits do not otherwise coexist.
+    var sendOnReturn: Bool {
+        get { value("sendOnReturn", true) }
+        set { store("sendOnReturn", newValue) }
+    }
+
+    /// Whether an unsent message survives the menu closing.
+    ///
+    /// The menu closes on a cursor leaving it, which is easy to do by accident
+    /// halfway through a sentence, and until now that threw the sentence away.
+    var keepDrafts: Bool {
+        get { value("keepDrafts", true) }
+        set { store("keepDrafts", newValue) }
+    }
+
+    /// Unsent messages, by thread id.
+    ///
+    /// In `UserDefaults` rather than in memory so a draft outlives a quit, or a
+    /// crash, which is the case where losing it stings most. Written by the
+    /// model, which does not need a repaint for it, so no `objectWillChange`.
+    var drafts: [String: String] {
+        get { defaults.dictionary(forKey: "drafts") as? [String: String] ?? [:] }
+        set { defaults.set(newValue, forKey: "drafts") }
     }
 
     // MARK: - Look
@@ -294,6 +344,42 @@ final class Preferences: ObservableObject {
     var webReloadMinutes: Double {
         get { value("webReloadMinutes", Defaults.webReloadMinutes) }
         set { store("webReloadMinutes", min(max(newValue, 2), 120)) }
+    }
+
+    /// The width the menu opens at, in points.
+    ///
+    /// A floor rather than a fixed size: long names still widen it, by the same
+    /// margin they always could, so the setting says "at least this wide"
+    /// rather than promising a width the contents can overflow.
+    var menuWidth: Double {
+        get { Self.menuWidthValue }
+        set { store("menuWidth", min(max(newValue, 200), 480)) }
+    }
+
+    static var menuWidthValue: Double {
+        let stored = UserDefaults.standard.object(forKey: "menuWidth") as? Double ?? Defaults.menuWidth
+        return min(max(stored, 200), 480)
+    }
+
+    /// How tall the menu's rows may get before they scroll.
+    var menuHeight: Double {
+        get { Self.menuHeightValue }
+        set { store("menuHeight", min(max(newValue, 160), 720)) }
+    }
+
+    static var menuHeightValue: Double {
+        let stored = UserDefaults.standard.object(forKey: "menuHeight") as? Double ?? Defaults.menuHeight
+        return min(max(stored, 160), 720)
+    }
+
+    /// Whether photos, reels and GIFs get a thumbnail on the card.
+    ///
+    /// The image comes from Instagram's CDN on a signed URL, which is one more
+    /// host than the app otherwise touches, so this is a choice rather than an
+    /// assumption.
+    var showMediaThumbnails: Bool {
+        get { value("showMediaThumbnails", true) }
+        set { store("showMediaThumbnails", newValue) }
     }
 
     // MARK: - Mark-as-read watermarks

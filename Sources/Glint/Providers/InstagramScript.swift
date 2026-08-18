@@ -70,8 +70,51 @@ enum InstagramScript {
       return { kind: 'other', preview: t ? String(t).replace(/_/g, ' ') : '' };
     }
 
+    // A thumbnail for the visual item types, when Instagram supplies one.
+    //
+    // Every one of these shapes has been seen in a live inbox: a photo carries
+    // image_versions2 directly, a reel carries it under clip.clip, a GIF is an
+    // animated_media with fixed_height, and the xma_* variants - Instagram's
+    // newer cross-app payloads - carry a preview url instead of candidates.
+    // The smallest candidate is taken deliberately: the card draws this at
+    // about 70 points and pulling a 1080-wide original for it would be silly.
+    function thumbOf(it) {
+      if (!it) return '';
+      const smallest = (v) => {
+        const c = (v && v.candidates) || [];
+        return c.length ? String(c[c.length - 1].url || '') : '';
+      };
+      const paths = [
+        () => smallest(it.image_versions2),
+        () => smallest(it.media && it.media.image_versions2),
+        () => smallest(it.media_share && it.media_share.image_versions2),
+        () => smallest(it.clip && it.clip.clip && it.clip.clip.image_versions2),
+        () => smallest(it.reel_share && it.reel_share.media && it.reel_share.media.image_versions2),
+        () => smallest(it.story_share && it.story_share.media && it.story_share.media.image_versions2),
+        () => String((it.animated_media && it.animated_media.images &&
+                      it.animated_media.images.fixed_height &&
+                      it.animated_media.images.fixed_height.url) || ''),
+        () => {
+          for (const key of ['xma_media_share', 'xma_clip', 'xma_story_share', 'xma_reel_share']) {
+            const x = (it[key] || [])[0];
+            const url = x && ((x.preview_url_info && x.preview_url_info.url) || x.preview_url);
+            if (url) return String(url);
+          }
+          return '';
+        }
+      ];
+      for (const p of paths) {
+        try { const u = p(); if (u) return u; } catch (e) {}
+      }
+      return '';
+    }
+
     try {
-      const r = await fetch('/api/v1/direct_v2/inbox/?limit=25&thread_message_limit=1',
+      // Ten rather than one. A chat with five unread messages used to arrive
+      // as a single preview line, so the card could only ever say who had
+      // written, never how much. The extra items are cheap and are exactly
+      // what the grouping needs.
+      const r = await fetch('/api/v1/direct_v2/inbox/?limit=25&thread_message_limit=10',
                             { headers: H, credentials: 'include' });
       if (r.status === 401 || r.status === 403) return JSON.stringify({ status: 'auth' });
       if (!r.ok) return JSON.stringify({ status: 'error', detail: 'inbox HTTP ' + r.status });
@@ -85,6 +128,39 @@ enum InstagramScript {
         const it = (t.items && t.items[0]) || t.last_permanent_item;
         const c = classifyItem(it);
         const names = (t.users || []).map(u => u.username).filter(Boolean);
+
+        // Whose message an item is. Hoisted out of the row below because the
+        // unread run needs it for every item, not just the newest.
+        const sentByViewer = (x) => !!(x && (x.is_sent_by_viewer ||
+                                             (t.viewer_id !== undefined &&
+                                              String(x.user_id) === String(t.viewer_id))));
+
+        // Everything that has arrived since you last looked at this thread.
+        //
+        // last_seen_at is keyed by user id and carries the timestamp the viewer
+        // has read up to, in microseconds like the items themselves. Verified
+        // with GLINT_PROBE=1: an unread thread reported three items newer than
+        // the mark, every read one reported none. Where the mark is missing the
+        // newest item alone stands in, which is what the app showed before.
+        const seen = (t.last_seen_at || {})[String(t.viewer_id)];
+        const seenTs = seen ? Number(seen.timestamp) : 0;
+        let unread = [];
+        if (t.read_state === 1) {
+          unread = (t.items || []).filter(x => !sentByViewer(x) &&
+                                               (!seenTs || Number(x.timestamp) > seenTs));
+          if (!unread.length && it) unread = [it];
+        }
+        // Instagram returns newest first; a conversation reads the other way.
+        const messages = unread.slice(0, 8).reverse().map(x => {
+          const mc = classifyItem(x);
+          return {
+            id: String(x.item_id || x.timestamp || ''),
+            preview: mc.preview.slice(0, 160),
+            kind: mc.kind,
+            image: thumbOf(x),
+            ts: x.timestamp ? Math.round(x.timestamp / 1000) : 0
+          };
+        });
         out.threads.push({
           id: String(t.thread_id || ''),
           title: String(t.thread_title || names.join(', ') || 'Instagram user'),
@@ -92,6 +168,10 @@ enum InstagramScript {
           preview: c.preview.slice(0, 160),
           kind: c.kind,
           unread: t.read_state === 1,
+          messages: messages,
+          // What the run was before the cap, so the row can say how much it is
+          // not showing.
+          unreadCount: unread.length,
           // Whose message the newest entry is. A reaction sits on *your*
           // message, so this is what separates "they replied" from "they
           // tapped a heart on something you said".
@@ -99,9 +179,7 @@ enum InstagramScript {
           // Cross-checked against the thread's own viewer id, because
           // is_sent_by_viewer is absent on some item shapes - notably entries
           // that come back via last_permanent_item rather than items[0].
-          mine: !!(it && (it.is_sent_by_viewer ||
-                          (t.viewer_id !== undefined &&
-                           String(it.user_id) === String(t.viewer_id)))),
+          mine: sentByViewer(it),
           group: (t.users || []).length > 1,
           muted: !!t.muted,
           // Instagram timestamps direct items in microseconds.
@@ -182,9 +260,16 @@ enum InstagramScript {
         for (const s of fresh.concat(n.old_stories || []).slice(0, 40)) {
           const a = s.args || {};
           if (!a.text) continue;
+          // The actor, so the card can group by who did it rather than by what
+          // was done. profile_name is the username; the rendered text opens
+          // with it, which is the fallback when the field is absent.
+          const actor = String(a.profile_name || '').trim()
+                     || (String(a.text).match(/^([A-Za-z0-9._]{1,30})\b/) || [])[1] || '';
           out.activity.push({
             id: String(s.pk || a.tuuid || ''),
             text: String(a.text).slice(0, 180),
+            actor: actor,
+            actorID: String(a.profile_id || ''),
             kind: classifyStory(s),
             isNew: freshIDs.has(String(s.pk)),
             // Activity timestamps are seconds, unlike direct items.

@@ -12,6 +12,10 @@ enum SettingsMetrics {
     static let cardPadding: CGFloat = 14
     static let cardSpacing: CGFloat = 14
     static let windowPadding: CGFloat = 18
+    /// The window's width, in one place so the SwiftUI frame and the AppKit
+    /// content size cannot drift apart. Set by the tab bar, which is the widest
+    /// fixed thing in the window.
+    static let windowWidth: CGFloat = 660
     /// Height of the tab bar and of the round button beside it. Both derive
     /// from this rather than being eyeballed, so they cannot drift apart.
     static let barHeight: CGFloat = 34
@@ -180,14 +184,16 @@ struct SettingColour: View {
 /// The four panes, and the glass bar that picks between them.
 enum SettingsTab: String, CaseIterable, Identifiable {
     /// General first: it carries the connection, which is the one thing you open
-    /// Settings to check when something is wrong.
-    case general, notifications, appearance, about
+    /// Settings to check when something is wrong. Composing sits beside
+    /// Notifications because both are about the menu rather than the dot.
+    case general, notifications, composing, appearance, about
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .notifications: return "Notifications"
+        case .composing:     return "Composing"
         case .appearance:    return "Appearance"
         case .general:       return "General"
         case .about:         return "About"
@@ -197,6 +203,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .notifications: return "bell.badge"
+        case .composing:     return "square.and.pencil"
         case .appearance:    return "paintbrush"
         case .general:       return "gearshape"
         case .about:         return "info.circle"

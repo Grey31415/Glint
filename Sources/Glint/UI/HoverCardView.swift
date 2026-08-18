@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The scoped view that unfolds from the dot.
@@ -35,21 +36,26 @@ struct HoverCardView: View {
     /// The menu opens at `minWidth` and only widens for names that would
     /// otherwise truncate. Previews never widen it: they are the one thing long
     /// enough to drag the whole menu open, and clipping one costs nothing.
-    static let minWidth: CGFloat = 252
-    static let maxWidth: CGFloat = 360
+    ///
+    /// Settings owns the number now. The headroom above it is kept as a margin
+    /// rather than a second setting: "how wide is the menu" and "how much may a
+    /// long name stretch it" is one question to everybody except the person who
+    /// wrote the layout.
+    static var minWidth: CGFloat { CGFloat(Preferences.menuWidthValue) }
+    static var maxWidth: CGFloat { minWidth + 108 }
     /// Tallest the rows area is allowed to get before it scrolls.
-    static let maxRowsHeight: CGFloat = 360
+    static var maxRowsHeight: CGFloat { CGFloat(Preferences.menuHeightValue) }
 
-    private var threads: [DirectThread] { model.cardThreads() }
-    private var showsMessages: Bool {
-        prefs.isEnabled(.messages) || prefs.isEnabled(.reactions)
-    }
+    /// One row per correspondent: their conversation and their activity
+    /// together.
+    private var entries: [GlintModel.CardEntry] { model.cardEntries() }
 
-    private var activityRows: [KindSummary] {
-        model.summaries.filter { !$0.kind.isDirect && $0.count > 0 }
-    }
+    /// Counts with nobody to attribute them to. Instagram badges a category
+    /// without always saying who is behind it, and that number has to stay on
+    /// the card or it stops agreeing with the dot.
+    private var activityRows: [KindSummary] { model.unattributedActivity() }
 
-    private var isEmpty: Bool { threads.isEmpty && activityRows.isEmpty }
+    private var isEmpty: Bool { entries.isEmpty && activityRows.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -66,6 +72,7 @@ struct HoverCardView: View {
             } else {
                 rows.frame(maxHeight: Self.maxRowsHeight)
             }
+            syncLine
         }
         .frame(width: measuring == .width ? nil : width, alignment: .leading)
         // No background, border or shadow here: this is the *contents* of the
@@ -74,9 +81,19 @@ struct HoverCardView: View {
 
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if showsMessages {
-                ForEach(threads) { thread in
+            ForEach(entries) { entry in
+                if let thread = entry.thread {
                     ThreadEntry(thread: thread,
+                                stored: model.draft(for: thread.id),
+                                sendOnReturn: prefs.sendOnReturn,
+                                onDraft: { model.setDraft($0, for: thread.id) },
+                                // Never while measuring width: an image that
+                                // has not arrived yet is a different size from
+                                // one that has, and the menu would settle on
+                                // whichever the measuring copy saw first.
+                                showThumbnails: prefs.showMediaThumbnails && measuring == .none,
+                                activity: entry.activity,
+                                activityLine: entry.activityLine,
                                 showPreview: prefs.showMessagePreviews && measuring != .width,
                                 // Like previews, answers are dropped while
                                 // measuring width: a long one would drag the
@@ -86,12 +103,17 @@ struct HoverCardView: View {
                                 measuring: measuring != .none,
                                 onReply: { onCompose(composing == thread.id ? nil : thread.id) },
                                 onTap: { model.open(thread) },
+                                onOpenActivity: { model.open(entry.activity.first?.kind ?? .likes) },
                                 onSend: { text in await model.send(text, to: thread) },
                                 onClose: { onCompose(nil) })
+                } else {
+                    ActorRow(entry: entry,
+                             showDetail: measuring != .width,
+                             onOpen: { model.open(entry.kinds.first ?? .likes) })
                 }
             }
             if !activityRows.isEmpty {
-                if showsMessages && !threads.isEmpty { hairline }
+                if !entries.isEmpty { hairline }
                 ForEach(activityRows) { summary in
                     ActivityRow(summary: summary,
                                 samples: model.feed.items(for: summary.kind),
@@ -101,6 +123,38 @@ struct HoverCardView: View {
             }
         }
         .padding(.bottom, 7)
+    }
+
+    /// When Glint last actually heard from Instagram.
+    ///
+    /// The counts are only ever as good as the last poll, and every failure
+    /// mode short of signing out used to keep the last good numbers on screen
+    /// and say nothing - a dot that has been wrong for an hour looks exactly
+    /// like a dot that is right. Quiet while everything is current; the line
+    /// speaks up when it is not.
+    @ViewBuilder
+    private var syncLine: some View {
+        let stale = model.source.isStale
+        let offline = model.state == .offline
+        if offline || stale || model.source.lastUpdate == nil {
+            HStack(spacing: 5) {
+                Image(systemName: offline ? "wifi.slash" : "clock.arrow.circlepath")
+                    .font(.system(size: 9))
+                Text(offline ? "Offline · last synced \(lastSyncPhrase)"
+                             : "Last synced \(lastSyncPhrase)")
+                    .font(.system(size: 10.5))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(offline ? Palette.warning : Palette.textLo)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 9)
+        }
+    }
+
+    private var lastSyncPhrase: String {
+        guard let last = model.source.lastUpdate else { return "never" }
+        return RelativeTime.phrase(for: last)
     }
 
     private var hairline: some View {
@@ -199,12 +253,21 @@ struct HoverCardView: View {
 /// for the same reason: the block has to read as one conversation, top to bottom.
 private struct ThreadEntry: View {
     let thread: DirectThread
+    /// The unsent message for this thread, if there is one.
+    let stored: String
+    let sendOnReturn: Bool
+    let onDraft: (String) -> Void
+    let showThumbnails: Bool
+    /// What this person has also done outside the conversation.
+    let activity: [ActivityItem]
+    let activityLine: String
     let showPreview: Bool
     let replies: [SentReply]
     let isComposing: Bool
     let measuring: Bool
     let onReply: () -> Void
     let onTap: () -> Void
+    let onOpenActivity: () -> Void
     let onSend: (String) async -> SendResult
     let onClose: () -> Void
 
@@ -214,9 +277,15 @@ private struct ThreadEntry: View {
         VStack(alignment: .leading, spacing: 0) {
             ThreadRow(thread: thread,
                       showPreview: showPreview,
+                      showThumbnails: showThumbnails,
                       isComposing: isComposing,
+                      hasDraft: !stored.isEmpty,
                       onReply: onReply,
                       onTap: onTap)
+
+            if !activity.isEmpty {
+                ActivitySuffix(kinds: activity.map(\.kind), line: activityLine, onTap: onOpenActivity)
+            }
 
             ForEach(replies) { reply in
                 SentReplyRow(reply: reply)
@@ -225,6 +294,9 @@ private struct ThreadEntry: View {
             if isComposing {
                 ReplyComposer(thread: thread,
                               measuring: measuring,
+                              stored: stored,
+                              sendOnReturn: sendOnReturn,
+                              onDraft: onDraft,
                               onSend: onSend,
                               onClose: onClose)
             }
@@ -242,7 +314,11 @@ private struct ThreadEntry: View {
 private struct ThreadRow: View {
     let thread: DirectThread
     let showPreview: Bool
+    let showThumbnails: Bool
     let isComposing: Bool
+    /// Something typed here and not sent. Worth a mark, or a kept draft is a
+    /// secret.
+    let hasDraft: Bool
     let onReply: () -> Void
     let onTap: () -> Void
 
@@ -253,13 +329,28 @@ private struct ThreadRow: View {
     /// read.
     private let gutter: CGFloat = 8
 
+    /// The lines under the name.
+    ///
+    /// `messages` is empty for a thread that is not waiting on you - one you
+    /// have answered, which lingers on the card for five minutes - so the
+    /// single preview stands in there, and the row looks exactly as it did.
+    private var previews: [ThreadMessage] {
+        if !thread.messages.isEmpty { return thread.messages }
+        guard !thread.preview.isEmpty else { return [] }
+        return [ThreadMessage(id: thread.id, preview: thread.preview, kind: thread.kind,
+                              image: nil, date: thread.date)]
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Circle()
                 .fill(thread.isUnread ? Accent.current.glow : .clear)
                 .frame(width: gutter, height: gutter)
                 .padding(.top, 4)
-            VStack(alignment: .leading, spacing: 1) {
+            // Two, not one: a row can now carry several message lines, and at
+            // one point they read as a wrapped paragraph rather than as
+            // separate messages.
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(thread.title)
                         .font(.system(size: 12.5, weight: thread.isUnread ? .semibold : .regular))
@@ -270,20 +361,51 @@ private struct ThreadRow: View {
                         .font(.system(size: 10.5).monospacedDigit())
                         .foregroundStyle(Palette.textLo)
                 }
-                if showPreview, !thread.preview.isEmpty {
-                    Text(thread.preview)
+                if showPreview {
+                    // Every unread message, oldest first, rather than the
+                    // newest one standing in for all of them. Two people
+                    // writing one line each and one person writing four are
+                    // different situations and the card used to show them
+                    // identically.
+                    ForEach(previews) { message in
+                        Text(message.preview)
+                            .font(.system(size: 11.5))
+                            // A reaction is dimmed and italic: visibly not a
+                            // message, before you even read the words.
+                            .italic(message.kind == .reaction)
+                            .foregroundStyle(message.kind == .reaction ? Palette.textLo : Palette.textMid)
+                            .lineLimit(1)
+                            // Right-click rather than a button: the row is
+                            // already carrying two actions, and a third
+                            // control on every line would make a list of
+                            // messages look like a toolbar.
+                            .contextMenu {
+                                Button("Copy message") { Pasteboard.copy(message.preview) }
+                                Button("Copy conversation") {
+                                    Pasteboard.copy(previews.map(\.preview).joined(separator: "\n"))
+                                }
+                            }
+                        if showThumbnails, let image = message.image {
+                            Thumbnail(url: image)
+                        }
+                    }
+                    if thread.hiddenMessages > 0 {
+                        Text("+\(thread.hiddenMessages) more")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.textLo)
+                    }
+                } else if thread.unreadCount > 1 {
+                    // With previews switched off the count is the only way the
+                    // row can say there is more than one.
+                    Text("\(thread.unreadCount) messages")
                         .font(.system(size: 11.5))
-                        // A reaction is dimmed and italic: visibly not a
-                        // message, before you even read the words.
-                        .italic(thread.kind == .reaction)
-                        .foregroundStyle(thread.kind == .reaction ? Palette.textLo : Palette.textMid)
-                        .lineLimit(1)
+                        .foregroundStyle(Palette.textLo)
                 }
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: onTap)
 
-            ReplyButton(active: isComposing, action: onReply)
+            ReplyButton(active: isComposing, hasDraft: hasDraft, action: onReply)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
@@ -354,34 +476,43 @@ private struct ReplyElbow: Shape {
 /// comments and follows, which have no thread to reply into.
 private struct ReplyButton: View {
     let active: Bool
+    var hasDraft: Bool = false
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "pencil")
+            Image(systemName: hasDraft && !active ? "pencil.line" : "pencil")
                 .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(active ? Accent.current.glow
-                                        : (hovering ? Palette.textHi : Palette.textLo))
+                .foregroundStyle(active || hasDraft ? Accent.current.glow
+                                                    : (hovering ? Palette.textHi : Palette.textLo))
                 .frame(width: 20, height: 18)
                 .background(Capsule().fill(hovering && !active ? Palette.rowHover : .clear))
         }
         .buttonStyle(.plain)
-        .help(active ? "Close reply" : "Reply")
+        .help(active ? "Close reply" : (hasDraft ? "Unsent draft" : "Reply"))
         .onHover { hovering = $0 }
     }
 }
 
 /// The reply field, unfolded under its row.
 ///
-/// One line on purpose. The invisible copy that sizes the menu draws this too,
-/// and it can only report the right height if the field's height cannot depend
-/// on what has been typed into the real one.
+/// It used to be one line on purpose: the invisible copy that sizes the menu
+/// draws this too, and a field whose height depended on what had been typed
+/// into the real one would have measured the menu wrong. Now that drafts live
+/// in the model rather than in this view's state, both copies render the same
+/// text and the menu grows with it, which is what makes several lines possible
+/// at all.
 private struct ReplyComposer: View {
     let thread: DirectThread
     /// True in the copy that only exists to be measured. It takes the same
     /// room and must never take focus.
     let measuring: Bool
+    /// What was typed and not sent, restored from the model.
+    let stored: String
+    /// Whether Return sends or starts a new line.
+    let sendOnReturn: Bool
+    let onDraft: (String) -> Void
     let onSend: (String) async -> SendResult
     let onClose: () -> Void
 
@@ -399,13 +530,26 @@ private struct ReplyComposer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                TextField("Message \(thread.title)", text: $draft)
+                TextField("Message \(thread.title)", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.textHi)
+                    .lineLimit(1...4)
                     .focused($focused)
                     .disabled(sending || measuring)
-                    .onSubmit { if canSend { send() } }
+                    .onSubmit { if sendOnReturn, canSend { send() } }
+                    // Only the inverted mode is intercepted. Left alone, a
+                    // vertical field already does the messaging idiom - Return
+                    // submits, Shift-Return breaks the line - so handling that
+                    // case here would be reimplementing what works.
+                    .onKeyPress(keys: [.return], phases: .down) { press in
+                        guard !sendOnReturn else { return .ignored }
+                        if press.modifiers.contains(.command) || press.modifiers.contains(.shift) {
+                            if canSend { send() }
+                            return .handled
+                        }
+                        return .ignored
+                    }
 
                 if sending {
                     ProgressView()
@@ -444,7 +588,19 @@ private struct ReplyComposer: View {
         .padding(.leading, 16)
         .padding(.bottom, 7)
         .onExitCommand(perform: onClose)
-        .onAppear { if !measuring { focused = true } }
+        .onAppear {
+            draft = stored
+            if !measuring { focused = true }
+        }
+        // The model owns the text, so it survives the menu closing - which is
+        // easy to do by accident, the menu being a thing you leave by moving
+        // the cursor. It is also what lets the measuring copy render the same
+        // number of lines as the real field.
+        .onChange(of: draft) { _, new in if !measuring { onDraft(new) } }
+        // The other direction, for the copy that only measures: it has to
+        // follow what is being typed into the real field or the menu stops
+        // growing after the first line.
+        .onChange(of: stored) { _, new in if measuring { draft = new } }
     }
 
     private func send() {
@@ -457,6 +613,7 @@ private struct ReplyComposer: View {
             switch result {
             case .sent:
                 draft = ""
+                onDraft("")
                 onClose()
             case .dryRun(let request):
                 draft = ""
@@ -531,6 +688,87 @@ private struct ActivityRow: View {
     }
 }
 
+/// A person's activity hung under their conversation.
+///
+/// Indented to the message's text column, like a sent reply, so the block reads
+/// as one person rather than as a second row that happens to follow. Quiet on
+/// purpose: somebody writing to you and somebody liking a photo are not the
+/// same news, and merging them by author must not flatten that.
+private struct ActivitySuffix: View {
+    let kinds: [ActivityKind]
+    let line: String
+    let onTap: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: kinds.first?.symbol ?? "heart.fill")
+                .font(.system(size: 9))
+                .foregroundStyle(Palette.textLo)
+            Text(line)
+                .font(.system(size: 11))
+                .foregroundStyle(hovering ? Palette.textMid : Palette.textLo)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        // 14 of row padding, 8 of marker, 8 of gap: the text column.
+        .padding(.leading, 30)
+        .padding(.trailing, 14)
+        .padding(.bottom, 5)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// Somebody who is only in your notifications - no conversation, just things
+/// they did. Same shape as a thread row so the list stays one list, with the
+/// unread marker hollowed out because nothing here is waiting on a reply.
+private struct ActorRow: View {
+    let entry: GlintModel.CardEntry
+    let showDetail: Bool
+    let onOpen: () -> Void
+
+    @State private var hovering = false
+
+    private let gutter: CGFloat = 8
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: entry.kinds.first?.symbol ?? "heart.fill")
+                .font(.system(size: 9.5))
+                .foregroundStyle(Accent.current.glow.opacity(0.85))
+                .frame(width: gutter, height: gutter)
+                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(entry.name)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Palette.textMid)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text(RelativeTime.string(for: entry.date))
+                        .font(.system(size: 10.5).monospacedDigit())
+                        .foregroundStyle(Palette.textLo)
+                }
+                if showDetail {
+                    Text(entry.activityLine)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.textLo)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(hovering ? Palette.rowHover : .clear)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
+        .onHover { hovering = $0 }
+    }
+}
+
 /// Takes its icon rather than a symbol name, because one of them is not a
 /// symbol: SF Symbols carries no brand marks.
 private struct MiniButton<Icon: View>: View {
@@ -578,6 +816,40 @@ struct InstagramMark: Shape {
 }
 
 /// Compact relative timestamps: "now", "4m", "2h", "3d".
+/// A photo, reel or GIF, small.
+///
+/// Fetched straight from Instagram's CDN on the signed URL the inbox handed
+/// over. Nothing is cached to disk and nothing is drawn until it arrives - a
+/// placeholder box that may never fill is worse than no box, because it says
+/// something is coming.
+private struct Thumbnail: View {
+    let url: URL
+
+    var body: some View {
+        AsyncImage(url: url) { phase in
+            if case .success(let image) = phase {
+                image.resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 84, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Palette.rim.opacity(0.18), lineWidth: 0.6))
+                    .padding(.top, 2)
+            }
+        }
+    }
+}
+
+/// One place that writes to the clipboard, so "copy" means the same thing
+/// wherever it is offered.
+enum Pasteboard {
+    static func copy(_ text: String) {
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.setString(text, forType: .string)
+    }
+}
+
 enum RelativeTime {
     /// The same clock, phrased to stand in a sentence. "now" reads correctly on
     /// its own but not with "ago" after it.

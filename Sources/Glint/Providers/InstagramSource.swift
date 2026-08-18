@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Network
 import WebKit
 
 /// Keeps a signed-in instagram.com session loaded off-screen and reads the
@@ -24,12 +25,31 @@ final class InstagramSource: ObservableObject {
     @Published private(set) var feed = InstagramFeed()
     @Published private(set) var state: FeedState = .loading
     @Published private(set) var diagnostics = "Not started"
+    /// When the last poll actually came back with data. The card and Settings
+    /// both show it: an app whose whole surface is one dot has to be able to
+    /// answer "is this still working" without being taken apart.
     @Published private(set) var lastUpdate: Date?
+    /// Whether this Mac has a route to the internet at all.
+    @Published private(set) var isOnline = true
+
+    /// True when the last successful poll is old enough that the numbers on the
+    /// dot should not be taken at face value.
+    ///
+    /// Three intervals rather than one: a single missed poll is a blip, and a
+    /// warning that appears every time a request is slow teaches people to
+    /// ignore it. The floor keeps a five-second poll interval from calling
+    /// itself stale fifteen seconds later.
+    var isStale: Bool {
+        guard let lastUpdate else { return true }
+        let window = max(preferences.pollInterval * 3, 90)
+        return Date().timeIntervalSince(lastUpdate) > window
+    }
 
     private let preferences: Preferences
     private var webView: WKWebView?
     private var bridge: NavigationBridge?
     private var pollTimer: Timer?
+    private var pathMonitor: NWPathMonitor?
     private var reloadTimer: Timer?
     private var loginWindow: LoginWindowController?
     private var interstitialBounces = 0
@@ -70,10 +90,12 @@ final class InstagramSource: ObservableObject {
         load()
         startTimers()
         watchForSleep()
+        watchForNetwork()
     }
 
     func stop() {
         running = false
+        pathMonitor?.cancel(); pathMonitor = nil
         pollTimer?.invalidate(); pollTimer = nil
         reloadTimer?.invalidate(); reloadTimer = nil
         for observer in sleepObservers {
@@ -104,13 +126,31 @@ final class InstagramSource: ObservableObject {
         guard let webView else { return }
         let js = #"""
         const H = { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest' };
-        const out = { itemTypes: {}, storyTypes: {}, reelShareKeys: null };
+        const out = { itemTypes: {}, storyTypes: {}, reelShareKeys: null, threadShape: [] };
 
-        const r = await fetch('/api/v1/direct_v2/inbox/?limit=40&thread_message_limit=3',
+        const r = await fetch('/api/v1/direct_v2/inbox/?limit=40&thread_message_limit=10',
                               { headers: H, credentials: 'include' });
         if (r.ok) {
           const j = await r.json();
           for (const t of ((j.inbox && j.inbox.threads) || [])) {
+            // How many messages a thread is holding and what marks the point
+            // the viewer has read up to. Grouping a chat's unread messages
+            // depends entirely on this being present and comparable.
+            if (out.threadShape.length < 6) {
+              const seen = (t.last_seen_at || {})[String(t.viewer_id)] || null;
+              const newest = (t.items || [])[0];
+              out.threadShape.push({
+                items: (t.items || []).length,
+                read_state: t.read_state,
+                viewer: String(t.viewer_id || ''),
+                lastSeenKeys: t.last_seen_at ? Object.keys(t.last_seen_at) : null,
+                seenTs: seen ? String(seen.timestamp) : null,
+                seenItem: seen ? String(seen.item_id) : null,
+                newestTs: newest ? String(newest.timestamp) : null,
+                newerThanSeen: (t.items || []).filter(i =>
+                  seen && Number(i.timestamp) > Number(seen.timestamp) && !i.is_sent_by_viewer).length
+              });
+            }
             for (const it of (t.items || [])) {
               const ty = it.item_type || 'none';
               if (!out.itemTypes[ty]) {
@@ -360,6 +400,9 @@ final class InstagramSource: ObservableObject {
 
     private func poll() {
         guard running, !dormant, let webView, !inFlight else { return }
+        // Nothing to gain from a request that cannot leave the machine, and the
+        // failures it would bank push the next real attempt into a backoff.
+        guard isOnline else { return }
         // Relative fetches cannot resolve until a real page is loaded - on
         // about:blank they fail with "URL is not valid", which is noise rather
         // than a fault worth showing.
@@ -441,7 +484,15 @@ final class InstagramSource: ObservableObject {
                 isMine: raw["mine"] as? Bool ?? false,
                 isGroup: raw["group"] as? Bool ?? false,
                 isMuted: raw["muted"] as? Bool ?? false,
-                date: Self.date(fromMilliseconds: raw["ts"])))
+                date: Self.date(fromMilliseconds: raw["ts"]),
+                messages: (raw["messages"] as? [[String: Any]] ?? []).map { m in
+                    ThreadMessage(id: m["id"] as? String ?? UUID().uuidString,
+                                  preview: m["preview"] as? String ?? "",
+                                  kind: MessageKind(rawValue: m["kind"] as? String ?? "other") ?? .other,
+                                  image: (m["image"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) },
+                                  date: Self.date(fromMilliseconds: m["ts"]))
+                },
+                unreadCount: raw["unreadCount"] as? Int ?? 0))
         }
 
         if let counts = root["counts"] as? [String: Any] {
@@ -457,6 +508,8 @@ final class InstagramSource: ObservableObject {
             next.activity.append(ActivityItem(
                 id: (raw["id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? UUID().uuidString,
                 text: text,
+                actor: raw["actor"] as? String ?? "",
+                actorID: raw["actorID"] as? String ?? "",
                 kind: kind,
                 isNew: raw["isNew"] as? Bool ?? false,
                 date: Self.date(fromMilliseconds: raw["ts"])))
@@ -466,8 +519,14 @@ final class InstagramSource: ObservableObject {
         state = .ready
         lastUpdate = Date()
         if Self.debugLogging {
+            // Actors are named here because grouping the card by person is
+            // only as good as this field: an empty one falls out of the
+            // grouping and back into a bare per-kind tally.
             let byKind = Dictionary(grouping: next.activity, by: \.kind)
-                .map { "\($0.key.rawValue):\($0.value.count)" }
+                .map { kind, items -> String in
+                    let named = items.filter { !$0.actor.isEmpty }.count
+                    return "\(kind.rawValue):\(items.count)(named \(named))"
+                }
                 .sorted()
                 .joined(separator: " ")
             NSLog("[Glint:parsed] threads=%d unreadMsg=%d unreadReact=%d counts=%@ activity[%d] %@",
@@ -537,6 +596,41 @@ final class InstagramSource: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.poll() }
     }
 
+    /// Watches the machine's own connectivity, so a poll that cannot possibly
+    /// succeed says so instead of failing quietly.
+    ///
+    /// Without this a lost network looked exactly like everything being fine:
+    /// the last good feed stayed on the dot, the failure went into
+    /// `diagnostics`, and `diagnostics` is only visible with Settings open.
+    /// The state is set from the path rather than inferred from failed polls,
+    /// because those take three attempts and a backoff to accumulate.
+    private func watchForNetwork() {
+        let monitor = NWPathMonitor()
+        pathMonitor = monitor
+        monitor.pathUpdateHandler = { path in
+            let up = path.status == .satisfied
+            Task { @MainActor [weak self] in self?.networkChanged(online: up) }
+        }
+        monitor.start(queue: DispatchQueue(label: "com.grey31415.Glint.network"))
+    }
+
+    private func networkChanged(online: Bool) {
+        guard isOnline != online else { return }
+        isOnline = online
+        if Self.debugLogging { NSLog("[Glint:net] %@", online ? "online" : "offline") }
+        if online {
+            // Straight back to work rather than waiting out whatever backoff the
+            // failures earned while there was no network to speak of.
+            failures = 0
+            if case .offline = state { state = .loading }
+            diagnostics = "Network back, reconnecting…"
+            refresh()
+        } else {
+            state = .offline
+            diagnostics = "No network connection"
+        }
+    }
+
     private func handleFailure(_ error: Error) {
         let nsError = error as NSError
         if Self.debugLogging {
@@ -557,6 +651,8 @@ final class InstagramSource: ObservableObject {
         switch state {
         case .needsAuth:
             return ("Sign in to Instagram", { [weak self] in self?.presentLogin() })
+        case .offline:
+            return ("Try again", { [weak self] in self?.reload() })
         case .failed:
             return ("Retry", { [weak self] in self?.reload() })
         default:

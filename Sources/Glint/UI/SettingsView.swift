@@ -33,6 +33,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: SettingsMetrics.cardSpacing) {
                         switch tab {
                         case .notifications: NotificationsPane(model: model, prefs: prefs)
+                        case .composing:     ComposingPane(model: model, prefs: prefs)
                         case .appearance:    AppearancePane(prefs: prefs)
                         case .general:       GeneralPane(model: model, prefs: prefs, tick: tick)
                         case .about:         EmptyView()
@@ -44,7 +45,11 @@ struct SettingsView: View {
                 .scrollIndicators(.never)
             }
         }
-        .frame(width: 580, height: 560)
+        // Wide enough for the tab bar to sit at its natural size. Five tabs
+        // measure 543pt, and with the quit button and the gap that row wants
+        // 585 - more than the 580 the window used to be, so the bar was being
+        // squeezed. 660 leaves it room and leaves room for a sixth tab.
+        .frame(width: SettingsMetrics.windowWidth, height: 560)
         .background(VibrantBackground().ignoresSafeArea())
         // Controls pick up the app's own colour rather than the system accent,
         // so a switch in here matches the dot outside.
@@ -107,6 +112,7 @@ private struct StatusLight: View {
         case .ready:     return Accent.current.glow
         case .loading:   return Palette.textLo
         case .needsAuth: return Palette.warning
+        case .offline:   return Palette.textLo
         case .failed:    return Palette.warning
         }
     }
@@ -203,6 +209,71 @@ private struct KindTile: View {
     }
 }
 
+// MARK: - Composing
+
+/// Everything about answering from the menu: which key sends, what happens to
+/// what you have not sent, and how much of a conversation the menu shows.
+private struct ComposingPane: View {
+    @ObservedObject var model: GlintModel
+    @ObservedObject var prefs: Preferences
+
+    var body: some View {
+        GlassSection(title: "Sending") {
+            Picker("Return key", selection: prefs.binding(\.sendOnReturn)) {
+                Text("Sends the message").tag(true)
+                Text("Starts a new line").tag(false)
+            }
+            .pickerStyle(.radioGroup)
+            Note(prefs.sendOnReturn
+                 ? "Shift-Return starts a new line."
+                 : "Command-Return or Shift-Return sends.")
+        }
+
+        GlassSection(title: "Drafts") {
+            Toggle("Keep what you have not sent", isOn: prefs.binding(\.keepDrafts))
+            Note("""
+            The menu closes when the cursor leaves it, which is easy to do halfway \
+            through a sentence. A kept draft is restored when you open the reply field \
+            again, and the pen on that conversation is marked until it is sent.
+            """)
+            if !model.drafts.isEmpty {
+                Divider().opacity(0.4)
+                HStack {
+                    Text("\(model.drafts.count) unsent \(model.drafts.count == 1 ? "draft" : "drafts")")
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button("Discard") { model.clearDrafts() }.controlSize(.small)
+                }
+            }
+        }
+        .onChange(of: prefs.keepDrafts) { _, keep in
+            // Switching it off has to take the kept drafts with it, or the
+            // setting says "stop keeping these" and quietly keeps them.
+            if !keep { model.clearDrafts() }
+        }
+
+        GlassSection(title: "Messages") {
+            Toggle("Include message previews", isOn: prefs.binding(\.showMessagePreviews))
+            Toggle("Show photos and reels", isOn: prefs.binding(\.showMediaThumbnails))
+            Note("""
+            Thumbnails come from Instagram's own image servers, which is one more host \
+            than the rest of the app touches. Nothing is written to disk.
+            """)
+            Divider().opacity(0.4)
+            SettingSlider(title: "Keep after replying",
+                          value: prefs.binding(\.replyLinger),
+                          range: 0...30, unit: " min", decimals: 0,
+                          zeroLabel: "Off",
+                          standard: Defaults.replyLinger)
+            Note("""
+            How long a conversation you have answered stays on the menu, with your \
+            reply under it. At Off it goes as soon as the send is confirmed - a send \
+            that fails keeps it either way.
+            """)
+        }
+    }
+}
+
 // MARK: - Appearance
 
 private struct AppearancePane: View {
@@ -260,7 +331,6 @@ private struct AppearancePane: View {
 
         GlassSection(title: "Menu") {
             Toggle("Show details on hover", isOn: prefs.binding(\.showHoverCard))
-            Toggle("Include message previews", isOn: prefs.binding(\.showMessagePreviews))
             Toggle("Button for the Instagram inbox", isOn: prefs.binding(\.showInboxButton))
             Toggle("Colour glow in the menu", isOn: prefs.binding(\.menuGlow))
         }
@@ -278,6 +348,16 @@ private struct GeneralPane: View {
     @ObservedObject var prefs: Preferences
     /// Ticks so "Updated 4m ago" stays true while the window sits open.
     let tick: Date
+
+    /// Wall-clock time of the last sync, next to the relative one. "4m ago" is
+    /// the answer to "is it working"; the clock is the answer to "when did it
+    /// stop", and the two questions get asked together.
+    static let clock: DateFormatter = {
+        let f = DateFormatter()
+        f.timeStyle = .medium
+        f.dateStyle = .none
+        return f
+    }()
 
     /// Signed out is the one state with nothing to refresh, nothing to erase and
     /// no account to inspect, so it is the only one that changes the row.
@@ -343,6 +423,17 @@ private struct GeneralPane: View {
             }
         }
 
+        GlassSection(title: "Menu size") {
+            SettingSlider(title: "Width", value: prefs.binding(\.menuWidth),
+                          range: 200...480, unit: "pt", standard: Defaults.menuWidth)
+            SettingSlider(title: "Height", value: prefs.binding(\.menuHeight),
+                          range: 160...720, unit: "pt", standard: Defaults.menuHeight)
+            Note("""
+            Width is a floor: a long name still stretches the menu past it. Height is \
+            a ceiling: more rows than fit will scroll inside it.
+            """)
+        }
+
         GlassSection(title: "Polling") {
             SettingSlider(title: "Check every", value: prefs.binding(\.pollInterval),
                           range: 5...120, unit: "s", standard: Defaults.pollInterval)
@@ -364,11 +455,19 @@ private struct GeneralPane: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let last = model.source.lastUpdate {
-                        Text("Updated \(RelativeTime.phrase(for: last))")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                    // Named rather than implied. "Updated 4m ago" reads as a
+                    // note; "Last successful sync" is the thing you came here
+                    // to check when the dot looks wrong.
+                    HStack(spacing: 5) {
+                        Text("Last successful sync: " + (model.source.lastUpdate.map {
+                            "\(Self.clock.string(from: $0)) · \(RelativeTime.phrase(for: $0))"
+                        } ?? "never"))
+                        if model.source.isStale {
+                            Text("· overdue").foregroundStyle(Palette.warning)
+                        }
                     }
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                 }
                 Spacer(minLength: 0)
             }

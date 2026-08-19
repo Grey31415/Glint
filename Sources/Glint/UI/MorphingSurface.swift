@@ -46,8 +46,27 @@ struct MorphingSurface<DotContent: View, MenuContent: View>: View {
     /// The dot's colour does not vanish when the menu opens - it spreads into
     /// the glass as a bloom anchored where the dot was, so the surface still
     /// reads as having grown out of it.
+    ///
+    /// The margin over the surface's own longest side was 1.15 and had to be a
+    /// great deal wider. `MistyMask` fades the colour to nothing at about 0.42
+    /// of this, so the paint reaches far less far than the number suggests: a
+    /// magnified double-digit capsule is half as wide again as a single-digit
+    /// one, its ends came out past where the colour had already faded, and the
+    /// tips of a lit pill were plain glass.
+    ///
+    /// 2.80 rather than the 1.56 that first covers the tip, because the mask's
+    /// lobes drift by a further 0.10 of this same number - enlarging the bloom
+    /// enlarges the wander with it, so the margin buys less than it looks like
+    /// it should. Measured against the drift over an hour of phases, the tip's
+    /// worst moment goes from bare glass to 42% and its mean to 99%. It is not
+    /// solid even here: only a mask with a flat core, or one applied to the
+    /// menu rather than to the dot, closes the last of it, and both change how
+    /// the colour field looks.
+    ///
+    /// The open menu's bloom is carried along by the same figure, which is the
+    /// price of keeping the dot's colour and the menu's the same colour.
     private var bloomSide: CGFloat {
-        max(closed.width, closed.height, 40) * 1.15 * (1 + (blooms ? 2.2 : 0) * t)
+        max(closed.width, closed.height, 40) * 2.80 * (1 + (blooms ? 2.2 : 0) * t)
     }
 
     /// With the spread switched off the colour is the dot's alone, so it fades

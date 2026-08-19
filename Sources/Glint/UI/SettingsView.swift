@@ -280,24 +280,6 @@ private struct AppearancePane: View {
     @ObservedObject var prefs: Preferences
 
     var body: some View {
-        // Both colours in one place, because the question being answered is the
-        // same one: what colour is the dot, waiting or not.
-        GlassSection(title: "Colours") {
-            SettingColour(title: "Accent colour",
-                          value: prefs.binding(\.accentTint),
-                          changed: prefs.hasCustomAccent,
-                          reset: { prefs.resetAccent() })
-            SettingColour(title: "Nothing waiting",
-                          value: prefs.binding(\.quietTint),
-                          changed: prefs.quietTint.rgb != Defaults.quietTint,
-                          reset: { prefs.quietTint = Color(rgb: Defaults.quietTint) })
-            Note("""
-            The accent is the dot with something waiting on it, and everything in here \
-            that is not grey. Reset puts back Instagram's own gradient, which is five \
-            colours drifting rather than one.
-            """)
-        }
-
         GlassSection(title: "Placement") {
             Toggle("Hidden mode", isOn: prefs.binding(\.hiddenMode))
             Note("Parks the dot inside the notch, where the display has no pixels.")
@@ -421,17 +403,6 @@ private struct GeneralPane: View {
                 .help("Hear it")
                 .disabled(!prefs.playSoundOnNew)
             }
-        }
-
-        GlassSection(title: "Menu size") {
-            SettingSlider(title: "Width", value: prefs.binding(\.menuWidth),
-                          range: 200...480, unit: "pt", standard: Defaults.menuWidth)
-            SettingSlider(title: "Height", value: prefs.binding(\.menuHeight),
-                          range: 160...720, unit: "pt", standard: Defaults.menuHeight)
-            Note("""
-            Width is a floor: a long name still stretches the menu past it. Height is \
-            a ceiling: more rows than fit will scroll inside it.
-            """)
         }
 
         GlassSection(title: "Polling") {

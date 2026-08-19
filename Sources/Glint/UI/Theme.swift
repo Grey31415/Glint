@@ -92,61 +92,13 @@ struct Accent: Equatable {
         base: hex(0x6A7182),
         glow: hex(0x8A90A2))
 
-    /// What the app is currently painted in.
+    /// What the app is painted in: the dot, the menu, and every control in
+    /// Settings, so they can never disagree.
     ///
-    /// Instagram's gradient until somebody chooses otherwise, and then five
-    /// shades of their colour - in the dot, the menu, and every control in
-    /// Settings, because an accent that applied to only some of them would look
-    /// like a bug rather than a choice.
-    static var current: Accent {
-        Preferences.customAccent.map(around) ?? .instagram
-    }
-
-    /// Five shades around one chosen colour.
-    ///
-    /// A single flat colour would have been the obvious way to let the quiet dot
-    /// be customised, and it kills the thing that makes the dot look alive: the
-    /// fill is blobs that drift past each other, and blobs of one colour are
-    /// indistinguishable from a disc. These spread in brightness rather than
-    /// hue, so the result is recognisably the colour that was picked.
-    static func around(_ colour: Color) -> Accent {
-        let base = NSColor(colour).usingColorSpace(.sRGB) ?? .gray
-        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        base.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-
-        func shade(hue dh: CGFloat, bright db: CGFloat) -> Color {
-            Color(nsColor: NSColor(hue: (h + dh + 1).truncatingRemainder(dividingBy: 1),
-                                   saturation: min(max(s, 0), 1),
-                                   brightness: min(max(b + db, 0.06), 1),
-                                   alpha: 1))
-        }
-        return Accent(colors: [shade(hue: -0.02, bright:  0.14),
-                               shade(hue:  0.01, bright: -0.05),
-                               shade(hue:  0.03, bright:  0.06),
-                               shade(hue: -0.03, bright: -0.13),
-                               shade(hue:  0.00, bright:  0.00)],
-                      base: shade(hue: 0, bright: -0.08),
-                      glow: colour)
-    }
-}
-
-extension Color {
-    /// Round trip through `UserDefaults`, which holds an integer rather than a
-    /// colour. Opacity is deliberately not carried: the dot's transparency is
-    /// the glassiness slider's job, and two ways to make it see-through would
-    /// fight each other.
-    init(rgb: Int) {
-        self.init(.sRGB,
-                  red: Double((rgb >> 16) & 0xFF) / 255,
-                  green: Double((rgb >> 8) & 0xFF) / 255,
-                  blue: Double(rgb & 0xFF) / 255)
-    }
-
-    var rgb: Int {
-        let ns = NSColor(self).usingColorSpace(.sRGB) ?? .gray
-        let byte = { (v: CGFloat) in Int((min(max(v, 0), 1) * 255).rounded()) }
-        return byte(ns.redComponent) << 16 | byte(ns.greenComponent) << 8 | byte(ns.blueComponent)
-    }
+    /// One name rather than `.instagram` spelled out at each of the nineteen
+    /// places that ask, which is also where a colour setting would hook in if
+    /// one ever comes back.
+    static var current: Accent { .instagram }
 }
 
 /// Shared spring vocabulary. One place to retune the whole feel.

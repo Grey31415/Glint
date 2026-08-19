@@ -162,25 +162,6 @@ struct SettingSlider: View {
 
 /// A colour well with the same reset affordance as a slider.
 ///
-/// `changed` is passed in rather than derived by comparing colours, because one
-/// of these has a default that is not a colour at all: the accent's is a
-/// five-colour gradient, and picking its pink by hand is not the same as never
-/// having chosen.
-struct SettingColour: View {
-    let title: String
-    let value: Binding<Color>
-    let changed: Bool
-    let reset: () -> Void
-
-    var body: some View {
-        HStack {
-            ColorPicker(title, selection: value, supportsOpacity: false)
-            Spacer(minLength: 0)
-            ResetButton(changed: changed, action: reset)
-        }
-    }
-}
-
 /// The four panes, and the glass bar that picks between them.
 enum SettingsTab: String, CaseIterable, Identifiable {
     /// General first: it carries the connection, which is the one thing you open

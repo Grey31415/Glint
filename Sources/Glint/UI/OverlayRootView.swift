@@ -39,7 +39,7 @@ struct OverlayRootView: View {
     /// the two can no longer disagree.
     private var hasSubstance: Bool { model.total > 0 }
 
-    private var accent: Accent { hasSubstance ? .current : .around(prefs.quietTint) }
+    private var accent: Accent { hasSubstance ? .current : .quiet }
     private var openAmount: CGFloat { controller.isCardOpen ? 1 : 0 }
 
     /// The glow only breathes when something is waiting and the user wants

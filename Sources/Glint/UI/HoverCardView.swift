@@ -36,15 +36,10 @@ struct HoverCardView: View {
     /// The menu opens at `minWidth` and only widens for names that would
     /// otherwise truncate. Previews never widen it: they are the one thing long
     /// enough to drag the whole menu open, and clipping one costs nothing.
-    ///
-    /// Settings owns the number now. The headroom above it is kept as a margin
-    /// rather than a second setting: "how wide is the menu" and "how much may a
-    /// long name stretch it" is one question to everybody except the person who
-    /// wrote the layout.
-    static var minWidth: CGFloat { CGFloat(Preferences.menuWidthValue) }
-    static var maxWidth: CGFloat { minWidth + 108 }
+    static let minWidth: CGFloat = 252
+    static let maxWidth: CGFloat = 360
     /// Tallest the rows area is allowed to get before it scrolls.
-    static var maxRowsHeight: CGFloat { CGFloat(Preferences.menuHeightValue) }
+    static let maxRowsHeight: CGFloat = 360
 
     /// One row per correspondent: their conversation and their activity
     /// together.

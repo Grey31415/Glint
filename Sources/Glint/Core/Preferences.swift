@@ -21,11 +21,8 @@ enum Defaults {
     static let dotGlassiness = 0.0
     static let pollInterval = 15.0
     static let webReloadMinutes = 20.0
-    static let quietTint = 0x8A90A2
     static let replyLinger = 5.0
     static let alertSound = "Tink"
-    static let menuWidth = 252.0
-    static let menuHeight = 360.0
 }
 
 /// The alert sounds this Mac actually has.
@@ -179,43 +176,6 @@ final class Preferences: ObservableObject {
         set { store("dotGlassiness", min(max(newValue, 0), 100)) }
     }
 
-    /// The app's accent, or nil while it is still Instagram's own gradient.
-    ///
-    /// A sentinel rather than an absent key, so "put it back" is a value the
-    /// picker can write like any other. Static because `Accent.current` is read
-    /// from a dozen views that have no other reason to hold a `Preferences`,
-    /// which is the bargain `animationsEnabled` already makes.
-    static let accentKey = "accentTint"
-
-    static var customAccent: Color? {
-        guard let stored = UserDefaults.standard.object(forKey: accentKey) as? Int,
-              stored >= 0 else { return nil }
-        return Color(rgb: stored)
-    }
-
-    /// What the picker shows: the chosen colour, or the gradient's own pink
-    /// standing in for "not chosen".
-    var accentTint: Color {
-        get { Self.customAccent ?? Accent.instagram.glow }
-        set { store(Self.accentKey, newValue.rgb) }
-    }
-
-    var hasCustomAccent: Bool { Self.customAccent != nil }
-
-    /// Back to the gradient. Not the same as picking its pink by hand: five
-    /// colours drift inside a lit dot, and one of them is not five.
-    func resetAccent() { store(Self.accentKey, -1) }
-
-    /// The colour of a dot with nothing waiting on it.
-    ///
-    /// Only the quiet state is yours to choose. A dot that is actually waiting
-    /// on you keeps Instagram's own gradient, because that is the thing it is
-    /// telling you about - the colour is information, not decoration.
-    var quietTint: Color {
-        get { Color(rgb: value("quietTint", Defaults.quietTint)) }
-        set { store("quietTint", newValue.rgb) }
-    }
-
     /// How close the cursor must come to the dot before the menu unfolds,
     /// in points.
     ///
@@ -346,31 +306,6 @@ final class Preferences: ObservableObject {
         set { store("webReloadMinutes", min(max(newValue, 2), 120)) }
     }
 
-    /// The width the menu opens at, in points.
-    ///
-    /// A floor rather than a fixed size: long names still widen it, by the same
-    /// margin they always could, so the setting says "at least this wide"
-    /// rather than promising a width the contents can overflow.
-    var menuWidth: Double {
-        get { Self.menuWidthValue }
-        set { store("menuWidth", min(max(newValue, 200), 480)) }
-    }
-
-    static var menuWidthValue: Double {
-        let stored = UserDefaults.standard.object(forKey: "menuWidth") as? Double ?? Defaults.menuWidth
-        return min(max(stored, 200), 480)
-    }
-
-    /// How tall the menu's rows may get before they scroll.
-    var menuHeight: Double {
-        get { Self.menuHeightValue }
-        set { store("menuHeight", min(max(newValue, 160), 720)) }
-    }
-
-    static var menuHeightValue: Double {
-        let stored = UserDefaults.standard.object(forKey: "menuHeight") as? Double ?? Defaults.menuHeight
-        return min(max(stored, 160), 720)
-    }
 
     /// Whether photos, reels and GIFs get a thumbnail on the card.
     ///

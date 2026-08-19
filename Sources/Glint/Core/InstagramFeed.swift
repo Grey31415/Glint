@@ -53,6 +53,22 @@ enum ActivityKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// The word for one of these, for a line that already names the person:
+    /// "2 likes, 1 comment". `title` is a section heading and reads wrong there.
+    func shortNoun(count: Int) -> String {
+        let one: String
+        switch self {
+        case .messages:  one = "message"
+        case .reactions: one = "reaction"
+        case .likes:     one = "like"
+        case .comments:  one = "comment"
+        case .follows:   one = "follow"
+        case .tags:      one = "mention"
+        case .requests:  one = "request"
+        }
+        return count == 1 ? one : one + "s"
+    }
+
     /// Everything except plain messages defaults off, so the dot starts out
     /// meaning "a person wrote to you" and nothing else.
     var defaultEnabled: Bool { self == .messages }
@@ -83,6 +99,17 @@ enum MessageKind: String, Equatable, Codable {
     }
 }
 
+/// One unread message inside a conversation.
+struct ThreadMessage: Identifiable, Equatable {
+    let id: String
+    let preview: String
+    let kind: MessageKind
+    /// A thumbnail on Instagram's CDN, for photos, reels and GIFs. Signed and
+    /// short-lived, so it is fetched when the row is drawn and never cached.
+    let image: URL?
+    let date: Date
+}
+
 struct DirectThread: Identifiable, Equatable {
     let id: String
     /// Usernames, already joined for group threads.
@@ -97,10 +124,76 @@ struct DirectThread: Identifiable, Equatable {
     let isGroup: Bool
     let isMuted: Bool
     let date: Date
+    /// Everything unread in this conversation, oldest first, capped by the
+    /// script. A chat is one row, but a row can hold several messages.
+    let messages: [ThreadMessage]
+    /// How many were unread before the cap, so the row can say what it is not
+    /// showing.
+    let unreadCount: Int
+    /// The last thing they wrote before you answered, once `answered(upTo:)`
+    /// has taken it out of `messages`.
+    ///
+    /// `preview` cannot stand in for it. That is whatever is newest in the
+    /// conversation, and the moment the poll catches up with your reply the
+    /// newest thing is your own message - so the row printed the answer as
+    /// though they had written it, directly above the copy `SentReplyRow`
+    /// draws underneath, and the pair read as the same message twice. Kept
+    /// here instead, where trimming still has the real one in hand.
+    var answeredMessage: ThreadMessage? = nil
 
     /// Where clicking this row goes.
     var url: URL? {
         URL(string: "https://www.instagram.com/direct/t/\(id)/")
+    }
+
+    /// How many unread messages the row is not showing.
+    var hiddenMessages: Int { max(0, unreadCount - messages.count) }
+
+    /// How much this conversation is asking of you, in messages rather than in
+    /// conversations. Instagram counts unread *threads*, which is why three
+    /// messages from one person used to put a 1 on the dot; what is waiting is
+    /// three things to read, whoever wrote them.
+    ///
+    /// Never zero for an unread thread: where Instagram gives no run to count,
+    /// the newest item stands in for it.
+    var attentionCount: Int { isUnread ? max(unreadCount, 1) : 0 }
+
+    /// The same conversation with everything you have already answered taken
+    /// out of it.
+    ///
+    /// Replying is not reading - Instagram leaves `last_seen_at` where it was
+    /// until you open the thread properly - so the unread run still holds the
+    /// message you just answered. Without this, somebody writing again brought
+    /// their previous message back onto the card underneath your own reply to
+    /// it, which reads as though the answer had not been sent.
+    ///
+    /// The messages beyond the script's cap are the *oldest* of the run, so a
+    /// watermark that falls inside the visible window is past them too, and the
+    /// count can be taken from what is left. A watermark older than anything
+    /// visible says nothing about them, and the count stands.
+    ///
+    /// Trimming to nothing also drops `isUnread`. Instagram still calls the
+    /// thread unread and will until you open it, but nothing in it is waiting
+    /// on you any more, and every count and marker downstream reads that flag
+    /// to decide whether something is.
+    func answered(upTo when: Date) -> DirectThread {
+        let kept = messages.filter { $0.date > when }
+        guard kept.count != messages.count else { return self }
+        return DirectThread(id: id,
+                            title: title,
+                            fullName: fullName,
+                            preview: preview,
+                            kind: kind,
+                            isUnread: isUnread && !kept.isEmpty,
+                            isMine: isMine,
+                            isGroup: isGroup,
+                            isMuted: isMuted,
+                            date: date,
+                            messages: kept,
+                            unreadCount: kept.count,
+                            // Oldest first, so the newest of the ones being
+                            // dropped is the one the answer was answering.
+                            answeredMessage: messages.last { $0.date <= when } ?? answeredMessage)
     }
 
     /// Which bucket this thread counts toward, if unread.
@@ -126,9 +219,27 @@ struct DirectThread: Identifiable, Equatable {
 struct ActivityItem: Identifiable, Equatable {
     let id: String
     let text: String
+    /// Who did it. Instagram's `profile_name`, which is the username, so it
+    /// compares directly against a one-to-one thread's title.
+    let actor: String
+    /// Their numeric id, which survives a rename and is what grouping keys on
+    /// when it is there.
+    let actorID: String
     let kind: ActivityKind
     let isNew: Bool
     let date: Date
+
+    /// What the card shows once the actor's name is already on the row.
+    ///
+    /// Instagram writes the sentence starting with the username, and repeating
+    /// it under a heading of the same name reads as a stutter.
+    var detail: String {
+        guard !actor.isEmpty, text.lowercased().hasPrefix(actor.lowercased()) else { return text }
+        return String(text.dropFirst(actor.count)).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Grouping key: the id when Instagram gave one, the name otherwise.
+    var actorKey: String { actorID.isEmpty ? actor.lowercased() : actorID }
 }
 
 /// Everything read from Instagram in one poll.
@@ -179,6 +290,10 @@ enum FeedState: Equatable {
     case loading
     case ready
     case needsAuth
+    /// The machine has no route to the internet. Distinct from `failed`, which
+    /// is Instagram saying no: one of them is worth a retry button and the
+    /// other fixes itself the moment the network comes back.
+    case offline
     case failed(String)
 
     var summary: String {
@@ -186,6 +301,7 @@ enum FeedState: Equatable {
         case .loading:        return "Connecting…"
         case .ready:          return "Connected"
         case .needsAuth:      return "Sign in required"
+        case .offline:        return "Offline"
         case .failed(let why): return "Error: \(why)"
         }
     }

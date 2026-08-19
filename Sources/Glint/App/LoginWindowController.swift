@@ -69,6 +69,7 @@ final class LoginWindowController {
     }
 
     func show() {
+        if let window { AppPresence.follow(window) }
         // The app runs as an accessory, so it has to ask for focus explicitly
         // before a text field will accept typing.
         NSApp.activate(ignoringOtherApps: true)

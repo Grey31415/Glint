@@ -17,9 +17,27 @@ struct DotContentView: View {
 
     /// Reference size every internal metric derives from, so text and mark grow
     /// exactly in step with the capsule instead of being scaled bitmaps.
-    private var metric: CGFloat { dotSize * scale }
+    ///
+    /// The dot's height *now*, which is only `dotSize * scale` once the
+    /// approach has finished. With the number hidden at rest the dot starts as
+    /// a small circle and grows into a capsule, so digits sized from the full
+    /// dot arrived wider than the shape holding them - see
+    /// `DotGeometry.renderWidth`, which sizes that shape from the same number.
+    private var metric: CGFloat {
+        DotGeometry.renderHeight(rest: DotGeometry.restHeight(count: count,
+                                                              height: dotSize,
+                                                              showCount: showCountAtRest),
+                                 full: dotSize,
+                                 progress: progress,
+                                 scale: scale)
+    }
     private var countText: String { DotGeometry.countText(count) }
-    private var showsCount: Bool { count > 0 && (showCountAtRest || progress > 0.05) }
+
+    /// How much of the number is on screen. The capsule reads the same figure,
+    /// so it is never asked to hold a number it has no room for.
+    private var reveal: CGFloat {
+        DotGeometry.countReveal(count: count, showCount: showCountAtRest, progress: progress)
+    }
 
     var body: some View {
         ZStack {
@@ -31,7 +49,7 @@ struct DotContentView: View {
             // clutter arriving and leaving for no reason; the number alone is
             // what the dot is for.
             HStack(spacing: 0) {
-                if showsCount {
+                if reveal > 0 {
                     Text(countText)
                         .font(.system(size: DotGeometry.fontSize(height: metric),
                                       weight: .bold,
@@ -40,7 +58,15 @@ struct DotContentView: View {
                         .shadow(color: .black.opacity(0.35), radius: 0.5 * scale, y: 0.5)
                         .fixedSize()
                         .lineLimit(1)
-                        .transition(.scale(scale: 0.4).combined(with: .opacity))
+                        // Lifts the digits off the line box's descender space,
+                        // which they never use, and onto the dot's real centre.
+                        .offset(y: -DotGeometry.countLift(height: metric))
+                        // Driven by proximity rather than by a transition: the
+                        // capsule's width is mixed in on the same ramp, and a
+                        // transition running on its own clock would put the
+                        // digits at full size inside a shape still growing.
+                        .scaleEffect(0.4 + 0.6 * reveal)
+                        .opacity(Double(reveal))
                 }
             }
         }
@@ -53,6 +79,12 @@ struct DotContentView: View {
             arc(color: Palette.textLo.opacity(0.8), period: 1.1)
         case .needsAuth:
             arc(color: Palette.warning, period: 2.6)
+        case .offline:
+            // Dimmer and slower than the signed-out ring. Nothing is wrong with
+            // Glint or your account, and a dot that looks alarmed about the
+            // café wifi would be crying wolf - but a count nobody is refreshing
+            // has to look different from a live one.
+            arc(color: Palette.textLo.opacity(0.75), period: 3.6)
         default:
             EmptyView()
         }
@@ -70,9 +102,9 @@ struct DotContentView: View {
 
         if animated {
             ring.spin(active: true, period: period)
-                .frame(width: dotSize * scale, height: dotSize * scale)
+                .frame(width: metric, height: metric)
         } else {
-            ring.frame(width: dotSize * scale, height: dotSize * scale)
+            ring.frame(width: metric, height: metric)
         }
     }
 }

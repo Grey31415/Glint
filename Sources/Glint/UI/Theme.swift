@@ -36,6 +36,17 @@ enum Palette {
     static let rowHover   = adaptive(dark: .srgb(1, 1, 1, 0.10),
                                      light: .srgb(0, 0, 0, 0.07))
 
+    /// Darkens glass, in dark mode only.
+    ///
+    /// Glass takes its weight from what is behind it, and behind the dot is the
+    /// notch: black, on every machine, in both appearances. In light mode that
+    /// contrast is what makes a glassy dot read as an object. In dark mode the
+    /// glass lightens the black it sits on, so the dot came out *paler* than its
+    /// surroundings - a bright pill on a dark bar, which is the opposite of what
+    /// turning the glass up asks for.
+    static let glassScrim = adaptive(dark: .srgb(0, 0, 0, 0.48),
+                                     light: .srgb(0, 0, 0, 0))
+
     /// The surface's own edge. Call sites vary its opacity along the border, so
     /// this carries the tone and lets that multiply into it.
     static let rim        = adaptive(dark: .srgb(1, 1, 1, 1.00),
@@ -80,6 +91,14 @@ struct Accent: Equatable {
         colors: [hex(0x9AA0B5), hex(0x7C8394), hex(0x6C7386), hex(0x5A6072), hex(0x8A90A2)],
         base: hex(0x6A7182),
         glow: hex(0x8A90A2))
+
+    /// What the app is painted in: the dot, the menu, and every control in
+    /// Settings, so they can never disagree.
+    ///
+    /// One name rather than `.instagram` spelled out at each of the nineteen
+    /// places that ask, which is also where a colour setting would hook in if
+    /// one ever comes back.
+    static var current: Accent { .instagram }
 }
 
 /// Shared spring vocabulary. One place to retune the whole feel.

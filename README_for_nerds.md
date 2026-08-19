@@ -57,6 +57,64 @@ GET /api/v1/news/inbox/
 
 Both need `x-ig-app-id: 936619743392459`, the public web client's id.
 
+### When it asks
+
+For a long time it asked every fifteen seconds and nothing else. That is the
+wrong end of the problem: the page in the off-screen web view is Instagram's
+*own* client, and it holds a socket open for direct messages. Everything the
+timer went looking for had already arrived in the tab, seconds earlier.
+
+So Glint listens to that instead. A user script injected at document start
+wraps `WebSocket` in a `Proxy` - a proxy rather than a subclass, because the
+client reads `WebSocket.OPEN` off the constructor and tests `instanceof`, and
+both survive a construct trap - and posts one word to the native side for every
+frame. `fetch` and `XMLHttpRequest` are wrapped too, matched against a narrow
+allowlist (`edge-chat`, `/realtime`, `/async/`, `pubsub`), because Instagram has
+moved this traffic off the socket before and the failure mode when it does is
+silence, which looks exactly like an idle account. The allowlist deliberately
+excludes `/api/v1/`, which is where Glint's own reads go: a hook that fired on
+those would poll in a loop.
+
+**Nothing parses a frame.** The payloads are packed binary whose shape rotates
+with releases, and a parser for them would be a second `doc_id` to maintain. The
+only thing that crosses the bridge is the frame's *size*, and the only thing the
+size decides is how soon to run the ordinary read.
+
+Size, because the socket turns out to be chatty. Measured over two minutes on a
+quiet account:
+
+```
+   44 frames    1-2 bytes     keepalive, about one a second
+    8 frames   18-65 bytes    presence, typing, receipts - unidentified
+    1 frame       229 bytes   something
+```
+
+Answering every frame read the inbox every eight seconds, which is busier than
+the timer it replaced. So: 2 bytes and under is a ping and is dropped; 64 bytes
+and over is carrying something and is read within a second; in between is real
+but ambiguous and is read no faster than the old fixed interval would have. That
+last tier is the interesting one - it means a signal nobody has identified yet
+still cannot make Glint slower than it used to be, only faster.
+
+Behind all of it the timer survives as a net, and its interval is now a ceiling
+on *waiting* rather than a schedule. Sixty seconds while the socket is up. With
+no socket it starts at the interval in Settings and stretches - two minutes
+quiet doubles it, ten minutes quadruples it, an hour is eight times, capped at
+five minutes - and snaps back the moment a poll returns something different.
+Failures still double it up to eight times, and a frame cannot walk past that
+backoff; a backoff a socket can override is not a backoff. Every interval also
+gets ten percent of jitter, so a fleet of clients is not a cadence worth rate
+limiting.
+
+Reads that are not the heartbeat: opening the menu (rate limited to one per five
+seconds, since sweeping the cursor past the dot is one gesture rather than four
+requests), waking, the network coming back, and the socket reconnecting - what
+arrived while it was down arrived unannounced.
+
+`GLINT_DEBUG=1` logs all of it under `[Glint:rt]`, including the size of every
+frame, which is how the numbers above were arrived at and how to re-derive them
+when Instagram changes the shape of its chatter.
+
 ### Reactions vs messages
 
 A thread whose newest entry is `item_type: "action_log"` with
@@ -68,6 +126,56 @@ entries arriving via `last_permanent_item` rather than `items[0]`.
 
 Everything else - `text`, `media`, `voice_media`, `clip`, `media_share`,
 `story_share` - counts as a real message.
+
+### The unread run inside a thread
+
+The inbox is fetched with `thread_message_limit=10`, not 1. With one item per
+thread a chat holding five unread messages arrived as a single preview line, so
+the card could say who had written but never how much - two people writing one
+line each and one person writing four looked identical.
+
+Which of those items are unread comes from `last_seen_at`, keyed by user id:
+`last_seen_at[viewer_id].timestamp` is the point you have read up to, in
+microseconds like the items themselves. Anything newer than it and not sent by
+you is waiting. Where the mark is missing the newest item alone stands in, which
+is what the app showed before.
+
+Verified with `GLINT_PROBE=1`, which reports per-thread item counts and the
+marker: an unread thread came back with three items newer than the mark, every
+read thread with none.
+
+That run is also what the dot counts. Instagram counts unread *conversations* -
+three messages from one person is a 1 to it - and Glint used to pass that number
+straight through, so a chat filling up while you watched never moved the number.
+The dot now sums the runs instead: three messages are three things to read,
+whoever wrote them. A conversation is still one row on the card, because a
+person is the unit the eye groups by; only the arithmetic changed.
+
+### What replying does to the run
+
+Replying is not reading. Instagram leaves `last_seen_at` exactly where it was
+until you open the thread properly, so the run still holds the message you just
+answered - and when they wrote again, their earlier message came back onto the
+card underneath your own reply to it. Two messages waiting, one of which you had
+demonstrably dealt with, with your answer sitting under the wrong one.
+
+So the reply timestamp is a second watermark, local like the read one and
+applied in the same place the muted and group filters are: everything at or
+before it is dropped from the run, and the count follows what is left. The
+messages past the script's cap are the *oldest* of the run, so a watermark
+falling inside the visible window is past them too and the remainder can be
+counted exactly; a watermark older than anything visible says nothing about
+them, and the count stands.
+
+A thread trimmed to nothing stops being unread as far as Glint is concerned -
+the flag every count and marker downstream reads. It still shows for the length
+of the linger, as a row with the conversation's preview and your answer under
+it, and then goes.
+
+Sent replies follow the same rule from the other side: an answer is shown only
+while it is still the last thing that happened. Once they have written again it
+would be sitting under a message it has nothing to do with, which reads either
+as a reply to the wrong thing or as one that never went.
 
 ### Sorting the activity feed
 
@@ -91,6 +199,15 @@ number had to be derived from the unseen story list alone, which disagreed with
 the aggregates in the other direction and could not be made to add up. Story
 likes arrive constantly and mean little, so dropping them beats reporting them
 wrongly.
+
+Activity stories also carry `args.profile_name` and `args.profile_id`, which is
+who did it. The card groups on that: one row per correspondent, their
+conversation and their likes and comments together, rather than a list of
+conversations followed by a tally per category in which the same person could
+appear twice. Only a one-to-one thread is matched by name - a group's title is
+several usernames joined, and matching it would file one person's likes under
+everybody. Counts Instagram badges without saying who is behind them keep a
+per-category row, or the card and the dot would stop agreeing.
 
 Counts are tallied from the unseen stories, so each equals exactly the rows
 listed beneath it. When Instagram reports nothing new but is still badging a
@@ -150,12 +267,69 @@ GLINT_DRY_RUN=1    # assemble and log the request, send nothing
 GLINT_PROBE_SEND=1 # run the send path against the first thread on launch
 ```
 
+### Where your answer goes
+
+A sent reply stays on the card, indented under the message it answers, for five
+minutes. Instagram does echo it back on the next poll, but only as the preview
+line of a thread that has by then stopped waiting on you - so the row and the
+evidence both disappear, and the send is confirmed by nothing at all. Glint
+keeps its own copy of what it sent, in memory, and `cardThreads()` holds any
+thread that has one.
+
+The linger is short by design. The card is a list of things waiting on you, and
+a conversation you have answered is finished; five minutes is long enough to
+glance back and see what you wrote, short enough that the card does not silt up.
+It is a setting - *Conversations, keep after replying* - and at zero the row
+goes as soon as the send is confirmed. A dry run never records an answer -
+claiming a send that never left the machine is worse than showing nothing.
+
+Answering is remembered separately from the linger, because replying is not
+reading: Instagram goes on calling the thread unread until the next poll catches
+up, so without that memory a conversation you had dealt with would keep counting.
+The remembered date is compared against the thread's newest item, which is what
+brings the row back the moment they write again.
+
+The line *above* the answer is the message that answer was answering, kept aside
+at the moment the unread run is trimmed. `preview` cannot do that job: it is
+whatever is newest in the conversation, so one poll after a send it is your own
+reply, and the row printed it as though they had written it, directly above
+Glint's own copy of the same words. The pair read as one message twice.
+
+### Answering from the menu
+
+Return sends and Shift-Return breaks the line, or the other way round -
+*Composing, Return key*. Only the inverted mode is intercepted with
+`onKeyPress`; left alone, a vertical `TextField` already does the messaging
+idiom, and handling that case would be reimplementing what works.
+
+Drafts live in `GlintModel`, not in the composer's own state, which is what
+makes both of them possible: the menu closes when the cursor leaves it, so an
+unsent sentence used to die with the view, and the invisible copy that measures
+the menu can only report the right height if it lays out the same text as the
+real field. Memory first, `UserDefaults` on a 1.5 second delay - this runs on
+every keystroke.
+
 ### Marking as read
 
 Instagram will not let anything be marked read from outside without opening the
 conversation, so this is a local watermark, not a read receipt: remember the
 count, show only what arrives after. It is clamped to the real count, so reading
 the messages properly releases it - it cannot silently mute you forever.
+
+### Knowing it still works
+
+An app whose entire surface is one dot cannot fail quietly. Every failure short
+of signing out used to keep the last good counts on screen and write the reason
+into `diagnostics`, which is only visible with Settings open - a dot that has
+been wrong for an hour looked exactly like a dot that is right.
+
+Two things say otherwise now. `NWPathMonitor` watches the machine's own
+connectivity and puts the feed into `.offline` directly, rather than waiting for
+three failed polls and a backoff to infer it; polls are skipped while there is
+no route, and the network coming back clears the failure count and refreshes at
+once. And `isStale` - no successful poll in three intervals, floored at ninety
+seconds - puts a line at the foot of the menu saying when the last one was. Both
+stay quiet while things are current.
 
 ## Where the dot goes
 
@@ -232,6 +406,36 @@ from the far corner when closing:
    curve. They are now pinned by layout alignment, so there is no arithmetic
    left to break.
 
+Magnification is the exception, and it pins the *opposite* edge: the outer end
+of the resting dot. Growing from the notch-side anchor instead is the obvious
+reading of the rule above and looks wrong - every point of magnification shoves
+the dot out along the menu bar, so approaching it makes it lunge away from the
+notch before the menu has opened. Pinning the far edge sends the growth towards
+the housing, which is where the dot is about to go anyway. It is not the
+centring that caused the trouble: both edges are still fixed points, one per
+phase, and the view holds this rectangle at rest size for as long as the menu is
+open, so the magnify spring is never in flight at the same time as the morph.
+
+The capsule is sized from the number it holds, at the height it has *now* rather
+than the height it ends at. With *Show the number without hovering* off the dot
+rests as a small circle and grows into a capsule as the cursor approaches, and
+the digits used to be drawn at their final size from the moment they appeared.
+One digit fitted a half-grown capsule by luck. "42" was wider than the shape
+holding it for the first third of the approach and "99+" for the first half, and
+the surface's own clip cut them off square, which looks like the edge of the
+menu showing through the middle of the dot. The digits and the capsule now read
+one reveal ramp, so the number fades in as the shape grows to meet it and
+neither can arrive without the other. The status ring is sized the same way, for
+the same reason.
+
+The other thing that travels is the dot itself, and only on its way out. As
+the menu takes over it slides *towards* the notch - right when it is docked on
+the left, left when it is docked on the right - and the surface's clip on the
+notch-side edge eats it, so it ducks behind the camera housing instead of
+dissolving on the spot while the surface sweeps out the other way. This does not
+reopen the failure above: it is a single quantity driven by the morph's own `t`,
+not two separately animated ones that have to cancel.
+
 The menu also freezes the geometry it opened at - the feed refreshes on a timer,
 and arriving rows would otherwise resize it under the cursor.
 
@@ -261,6 +465,13 @@ dark-to-light for the same reason.
 
 Lit dots redraw at 30fps; quiet ones are static.
 
+The same colour field doubles as the bloom in the open menu, which is why
+*Colour glow in the menu* cannot simply switch it off: draining it would drain
+the dot as well, since the fill is what makes a dot a dot. Off instead holds the
+field at dot size and fades it on the dot's own curve, so the colour ducks behind
+the notch with it and the menu is glass. The accent wash on the glass goes with
+it, or the switch would look half-applied.
+
 ## Debugging
 
 ```sh
@@ -282,7 +493,12 @@ and reply the app makes.
 
 - The dot sits where the frontmost app draws its menus. Clicks pass through, but
   a long menu can overlap it - move it in Appearance, or use hidden mode.
-- Instagram counts unread *conversations*, not individual messages.
+- Instagram itself counts unread *conversations*; the dot counts messages, by
+  summing the unread run per thread. The two numbers will not agree, and
+  `unseenDirect` is kept from the payload as the sanity check on ours.
+- The realtime frame sizes above were measured without a message actually
+  arriving, so which tier a real delivery lands in is inferred rather than
+  confirmed. The middle tier exists so that being wrong about it costs nothing.
 - These are private endpoints. They can change without warning; the probe above
   is how you find out what changed.
 - Rebuilding changes the ad-hoc signature, so macOS treats it as a new app.

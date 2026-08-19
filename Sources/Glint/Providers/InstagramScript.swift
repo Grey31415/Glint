@@ -43,15 +43,78 @@ enum InstagramScript {
       if (t === 'media' || t === 'raven_media') return { kind: 'media', preview: 'Sent a photo' };
       if (t === 'clip'  || t === 'xma_clip')    return { kind: 'share', preview: 'Shared a reel' };
       if (t === 'media_share' || t === 'xma_media_share') return { kind: 'share', preview: 'Shared a post' };
-      if (t === 'story_share' || t === 'reel_share' || t === 'xma_story_share')
-                                  return { kind: 'share',    preview: 'Shared a story' };
+      // A story reply is not a share. Instagram files "somebody wrote to you
+      // about your story" under reel_share and puts what they actually typed in
+      // reel_share.text, so reading item_type alone reported 22 conversations
+      // as "Shared a story" when every one of them was a message. The subtype
+      // is the flag that separates them: reply, reaction, mention.
+      if (t === 'story_share' || t === 'reel_share' || t === 'xma_story_share') {
+        const rs = it.reel_share || it.story_share || {};
+        const said = String(rs.text || it.text || '').trim();
+        switch (String(rs.type || '')) {
+          case 'reply':
+            // Counts as a message, because it is one.
+            return { kind: 'text', preview: said ? 'Story: ' + said : 'Replied to a story' };
+          case 'reaction':
+            // Usually a single emoji, and noise in the same way a heart on a
+            // message is noise.
+            return { kind: 'reaction', preview: said ? said + ' on a story' : 'Reacted to a story' };
+          case 'mention':
+            return { kind: 'share', preview: 'Mentioned you in a story' };
+          default:
+            return { kind: 'share', preview: said ? 'Story: ' + said : 'Shared a story' };
+        }
+      }
       if (t === 'link')           return { kind: 'text',     preview: String((it.link && it.link.text) || 'Sent a link') };
       if (t === 'placeholder')    return { kind: 'system',   preview: 'Message unavailable' };
       return { kind: 'other', preview: t ? String(t).replace(/_/g, ' ') : '' };
     }
 
+    // A thumbnail for the visual item types, when Instagram supplies one.
+    //
+    // Every one of these shapes has been seen in a live inbox: a photo carries
+    // image_versions2 directly, a reel carries it under clip.clip, a GIF is an
+    // animated_media with fixed_height, and the xma_* variants - Instagram's
+    // newer cross-app payloads - carry a preview url instead of candidates.
+    // The smallest candidate is taken deliberately: the card draws this at
+    // about 70 points and pulling a 1080-wide original for it would be silly.
+    function thumbOf(it) {
+      if (!it) return '';
+      const smallest = (v) => {
+        const c = (v && v.candidates) || [];
+        return c.length ? String(c[c.length - 1].url || '') : '';
+      };
+      const paths = [
+        () => smallest(it.image_versions2),
+        () => smallest(it.media && it.media.image_versions2),
+        () => smallest(it.media_share && it.media_share.image_versions2),
+        () => smallest(it.clip && it.clip.clip && it.clip.clip.image_versions2),
+        () => smallest(it.reel_share && it.reel_share.media && it.reel_share.media.image_versions2),
+        () => smallest(it.story_share && it.story_share.media && it.story_share.media.image_versions2),
+        () => String((it.animated_media && it.animated_media.images &&
+                      it.animated_media.images.fixed_height &&
+                      it.animated_media.images.fixed_height.url) || ''),
+        () => {
+          for (const key of ['xma_media_share', 'xma_clip', 'xma_story_share', 'xma_reel_share']) {
+            const x = (it[key] || [])[0];
+            const url = x && ((x.preview_url_info && x.preview_url_info.url) || x.preview_url);
+            if (url) return String(url);
+          }
+          return '';
+        }
+      ];
+      for (const p of paths) {
+        try { const u = p(); if (u) return u; } catch (e) {}
+      }
+      return '';
+    }
+
     try {
-      const r = await fetch('/api/v1/direct_v2/inbox/?limit=25&thread_message_limit=1',
+      // Ten rather than one. A chat with five unread messages used to arrive
+      // as a single preview line, so the card could only ever say who had
+      // written, never how much. The extra items are cheap and are exactly
+      // what the grouping needs.
+      const r = await fetch('/api/v1/direct_v2/inbox/?limit=25&thread_message_limit=10',
                             { headers: H, credentials: 'include' });
       if (r.status === 401 || r.status === 403) return JSON.stringify({ status: 'auth' });
       if (!r.ok) return JSON.stringify({ status: 'error', detail: 'inbox HTTP ' + r.status });
@@ -65,6 +128,39 @@ enum InstagramScript {
         const it = (t.items && t.items[0]) || t.last_permanent_item;
         const c = classifyItem(it);
         const names = (t.users || []).map(u => u.username).filter(Boolean);
+
+        // Whose message an item is. Hoisted out of the row below because the
+        // unread run needs it for every item, not just the newest.
+        const sentByViewer = (x) => !!(x && (x.is_sent_by_viewer ||
+                                             (t.viewer_id !== undefined &&
+                                              String(x.user_id) === String(t.viewer_id))));
+
+        // Everything that has arrived since you last looked at this thread.
+        //
+        // last_seen_at is keyed by user id and carries the timestamp the viewer
+        // has read up to, in microseconds like the items themselves. Verified
+        // with GLINT_PROBE=1: an unread thread reported three items newer than
+        // the mark, every read one reported none. Where the mark is missing the
+        // newest item alone stands in, which is what the app showed before.
+        const seen = (t.last_seen_at || {})[String(t.viewer_id)];
+        const seenTs = seen ? Number(seen.timestamp) : 0;
+        let unread = [];
+        if (t.read_state === 1) {
+          unread = (t.items || []).filter(x => !sentByViewer(x) &&
+                                               (!seenTs || Number(x.timestamp) > seenTs));
+          if (!unread.length && it) unread = [it];
+        }
+        // Instagram returns newest first; a conversation reads the other way.
+        const messages = unread.slice(0, 8).reverse().map(x => {
+          const mc = classifyItem(x);
+          return {
+            id: String(x.item_id || x.timestamp || ''),
+            preview: mc.preview.slice(0, 160),
+            kind: mc.kind,
+            image: thumbOf(x),
+            ts: x.timestamp ? Math.round(x.timestamp / 1000) : 0
+          };
+        });
         out.threads.push({
           id: String(t.thread_id || ''),
           title: String(t.thread_title || names.join(', ') || 'Instagram user'),
@@ -72,6 +168,10 @@ enum InstagramScript {
           preview: c.preview.slice(0, 160),
           kind: c.kind,
           unread: t.read_state === 1,
+          messages: messages,
+          // What the run was before the cap, so the row can say how much it is
+          // not showing.
+          unreadCount: unread.length,
           // Whose message the newest entry is. A reaction sits on *your*
           // message, so this is what separates "they replied" from "they
           // tapped a heart on something you said".
@@ -79,9 +179,7 @@ enum InstagramScript {
           // Cross-checked against the thread's own viewer id, because
           // is_sent_by_viewer is absent on some item shapes - notably entries
           // that come back via last_permanent_item rather than items[0].
-          mine: !!(it && (it.is_sent_by_viewer ||
-                          (t.viewer_id !== undefined &&
-                           String(it.user_id) === String(t.viewer_id)))),
+          mine: sentByViewer(it),
           group: (t.users || []).length > 1,
           muted: !!t.muted,
           // Instagram timestamps direct items in microseconds.
@@ -162,9 +260,16 @@ enum InstagramScript {
         for (const s of fresh.concat(n.old_stories || []).slice(0, 40)) {
           const a = s.args || {};
           if (!a.text) continue;
+          // The actor, so the card can group by who did it rather than by what
+          // was done. profile_name is the username; the rendered text opens
+          // with it, which is the fallback when the field is absent.
+          const actor = String(a.profile_name || '').trim()
+                     || (String(a.text).match(/^([A-Za-z0-9._]{1,30})\b/) || [])[1] || '';
           out.activity.push({
             id: String(s.pk || a.tuuid || ''),
             text: String(a.text).slice(0, 180),
+            actor: actor,
+            actorID: String(a.profile_id || ''),
             kind: classifyStory(s),
             isNew: freshIDs.has(String(s.pk)),
             // Activity timestamps are seconds, unlike direct items.
@@ -305,9 +410,27 @@ enum InstagramScript {
       }
       let parsed = null;
       try { parsed = JSON.parse(raw); } catch (e) {}
-      if (!parsed) return JSON.stringify({ status: 'error', detail: 'not JSON: ' + raw.slice(0, 300) });
+      // An unrouted Instagram path answers 200 with the app's own HTML, so a
+      // rotated doc_id looks exactly like a success until the body is read.
+      // Naming it here turns the one piece of scheduled maintenance from a
+      // mystery into an instruction.
+      if (!parsed) {
+        const html = /^\s*<(!doctype|html)/i.test(raw);
+        return JSON.stringify({
+          status: html ? 'stale' : 'error',
+          detail: html ? 'doc_id ' + String(docID) + ' is no longer routed'
+                       : 'not JSON: ' + raw.slice(0, 300)
+        });
+      }
       if (parsed.errors) {
-        return JSON.stringify({ status: 'error', detail: JSON.stringify(parsed.errors).slice(0, 400) });
+        // Same failure, reported politely rather than by serving a web page.
+        const text = JSON.stringify(parsed.errors);
+        const stale = /doc_?id|persisted|not found|unknown query/i.test(text);
+        return JSON.stringify({
+          status: stale ? 'stale' : 'error',
+          detail: stale ? 'doc_id ' + String(docID) + ' was rejected: ' + text.slice(0, 200)
+                        : text.slice(0, 400)
+        });
       }
       return JSON.stringify({ status: 'ok', detail: JSON.stringify(parsed.data || {}).slice(0, 200) });
     } catch (e) {
@@ -315,88 +438,6 @@ enum InstagramScript {
     }
     """#
 
-    static let sendText = #"""
-    const csrf = (document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/) || [])[1] || '';
-    if (!csrf) return JSON.stringify({ status: 'auth', detail: 'no csrf token' });
-
-    // Instagram hands the web client a claim token on first response and wants
-    // it echoed on writes. Reads get away without it. Absent is fine, wrong is
-    // not, so it is only sent when the page actually has one.
-    let claim = '';
-    try { claim = sessionStorage.getItem('www-claim-v2') || ''; } catch (e) {}
-
-    const H = {
-      'x-ig-app-id': '936619743392459',
-      'x-requested-with': 'XMLHttpRequest',
-      'x-csrftoken': csrf,
-      'x-instagram-ajax': '1',
-      'content-type': 'application/x-www-form-urlencoded'
-    };
-    if (claim) H['x-ig-www-claim'] = claim;
-
-    const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-      const r = Math.random() * 16 | 0;
-      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-    });
-    const context = uuid();
-
-    // thread_id and thread_ids are both sent because the endpoint has accepted
-    // each spelling at different times and ignores the one it does not want.
-    // offline_threading_id is the client-side id the web app dedupes on.
-    const offline = String(Date.now()) + String(Math.floor(Math.random() * 1000000));
-    const body = new URLSearchParams({
-      action: 'send_item',
-      thread_id: String(threadID),
-      thread_ids: JSON.stringify([String(threadID)]),
-      text: String(text),
-      client_context: context,
-      mutation_token: context,
-      offline_threading_id: offline
-    }).toString();
-
-    const endpoint = '/api/v1/direct_v2/threads/broadcast/text/';
-
-    if (dryRun) {
-      return JSON.stringify({
-        status: 'dry',
-        detail: 'POST ' + endpoint + ' claim=' + (claim ? 'yes' : 'no') + ' ' + body
-      });
-    }
-
-    try {
-      const r = await fetch(endpoint, {
-        method: 'POST', headers: H, credentials: 'include', body: body
-      });
-      const raw = await r.text();
-      // Everything about a refusal is reported. Guessing at why a write failed
-      // from a status code alone is what makes this endpoint hard to work on.
-      if (!r.ok) {
-        return JSON.stringify({
-          status: (r.status === 401 || r.status === 403) ? 'auth' : 'error',
-          detail: 'HTTP ' + r.status + ' claim=' + (claim ? 'yes' : 'no') + ' ' + raw.slice(0, 400)
-        });
-      }
-      let parsed = null;
-      try { parsed = JSON.parse(raw); } catch (e) {}
-      if (parsed && parsed.status === 'ok') return JSON.stringify({ status: 'ok' });
-      return JSON.stringify({ status: 'error', detail: 'HTTP 200 but ' + raw.slice(0, 400) });
-    } catch (e) {
-      return JSON.stringify({ status: 'error', detail: 'threw: ' + String((e && e.message) || e) });
-    }
-    """#
-
-    /// Asks the site which send path it actually routes.
-    ///
-    /// Instagram answers an unrouted path with the app's own HTML and a 200,
-    /// which is what the first attempt at sending got back. A real endpoint
-    /// answers with JSON even when it refuses, so content type separates
-    /// "wrong address" from "wrong request" without sending anything. Every
-    /// candidate is aimed at thread id 0, which cannot exist.
-    /// GET only. A route that exists refuses a GET with JSON, usually a 405. A
-    /// route that does not exist is answered with the app shell and a 200,
-    /// which is exactly what the send POST got back. Two controls bracket the
-    /// answer: the inbox path Glint already reads, and a path invented here
-    /// that cannot exist. No write is attempted.
     static let probeSendEndpoints = #"""
     const csrf = (document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/) || [])[1] || '';
     let claim = '';
@@ -439,5 +480,142 @@ enum InstagramScript {
       if (document.querySelector('input[name="password"]')) return 'auth';
       return 'ok';
     })()
+    """#
+
+    /// Watches the realtime traffic the page already generates, so a new
+    /// message can be noticed rather than waited for.
+    ///
+    /// The page loaded here is Instagram's own web client, and it keeps a
+    /// socket open for direct messages: everything Glint polls for has already
+    /// arrived in the tab, seconds before the next poll asks. This hook turns
+    /// that into a single word posted to the native side, which then runs the
+    /// ordinary read.
+    ///
+    /// Nothing here parses a frame. The payloads are packed binary whose shape
+    /// rotates with Instagram's releases, and a parser for them would be a
+    /// second `doc_id` to maintain; all this needs to know is *that* something
+    /// happened. Every branch is wrapped, because a hook that throws takes the
+    /// page - and with it the session - down with it.
+    ///
+    /// Injected at document start into the page world, so it is in place before
+    /// the client's own scripts capture these globals.
+    static let realtimeHook = #"""
+    (function () {
+      'use strict';
+      const post = function (kind) {
+        try { window.webkit.messageHandlers.glintRealtime.postMessage(kind); } catch (e) {}
+      };
+
+      // Frames arrive in bursts - presence, typing, delivery receipts - and the
+      // native side answers all of them with the same one read, so coalescing
+      // here keeps the bridge quiet.
+      // Only the size goes across, not the frame. Keepalives and presence run
+      // to a few bytes and a real delivery does not, which is the whole of what
+      // the native side needs to tell a busy socket from a new message - and it
+      // stays true across payload formats in a way a parser would not.
+      const sizeOf = function (event) {
+        try {
+          const d = event && event.data;
+          if (typeof d === 'string') return d.length;
+          if (d && typeof d.byteLength === 'number') return d.byteLength;
+          if (d && typeof d.size === 'number') return d.size;
+        } catch (e) {}
+        return 0;
+      };
+
+      // Coalesced on a trailing edge rather than a leading one, and reporting
+      // the largest frame of the burst: the interesting frame is rarely the
+      // first, and the ping either side of it should not stand in for it.
+      let pending = -1;
+      let timer = null;
+      const beat = function (size) {
+        pending = Math.max(pending, size);
+        if (timer) return;
+        timer = setTimeout(function () {
+          timer = null;
+          const n = pending;
+          pending = -1;
+          post('frame:' + n);
+        }, 400);
+      };
+
+      // Only channels the page opens for itself. Glint's own reads go to
+      // /api/v1/direct_v2/, which is deliberately not matched: a hook that
+      // fired on those would poll in a loop.
+      const watched = function (url) {
+        const u = String(url || '');
+        return u.indexOf('edge-chat') >= 0 || u.indexOf('/realtime') >= 0 ||
+               u.indexOf('/async/') >= 0 || u.indexOf('pubsub') >= 0;
+      };
+
+      // Nothing below tags what it wraps, and there is no need to: a user
+      // script injected at document start runs exactly once per document, so
+      // there is no second run for a guard to catch. Earlier versions marked
+      // each patched global with a property saying so, which worked and left
+      // Glint's name sitting on three native objects for any script on the
+      // page to enumerate.
+      try {
+        const Native = window.WebSocket;
+        if (Native) {
+          // A Proxy rather than a subclass or a wrapping function: the client
+          // reads WebSocket.OPEN off the constructor and tests instanceof, and
+          // both survive a construct trap while neither survives a wrapper.
+          // A Proxy over a native constructor also still stringifies as
+          // [native code], which a wrapper does not.
+          window.WebSocket = new Proxy(Native, {
+            construct: function (target, args) {
+              const socket = new target(...args);
+              try {
+                socket.addEventListener('open',    function () { post('open'); });
+                socket.addEventListener('close',   function () { post('close'); });
+                socket.addEventListener('error',   function () { post('close'); });
+                socket.addEventListener('message', function (e) { beat(sizeOf(e)); });
+              } catch (e) {}
+              return socket;
+            }
+          });
+        }
+      } catch (e) {}
+
+      // Instagram has moved parts of this traffic off the socket before, and
+      // the day it does again the socket simply goes quiet - which looks
+      // exactly like an idle account. These two cover that.
+      try {
+        const nativeFetch = window.fetch;
+        if (nativeFetch) {
+          window.fetch = function (input, init) {
+            try { if (watched((input && input.url) || input)) beat(1e9); } catch (e) {}
+            return nativeFetch.apply(this, arguments);
+          };
+        }
+      } catch (e) {}
+
+      try {
+        const proto = window.XMLHttpRequest && window.XMLHttpRequest.prototype;
+        if (proto) {
+          // A WeakSet rather than a flag on the request, for the same reason:
+          // the requests are the page's own objects and should come back from
+          // this untouched. It also cannot leak, since the entry goes when the
+          // request does.
+          const interesting = new WeakSet();
+          const open = proto.open;
+          proto.open = function (method, url) {
+            try { if (watched(url)) interesting.add(this); } catch (e) {}
+            return open.apply(this, arguments);
+          };
+          const send = proto.send;
+          proto.send = function () {
+            try {
+              if (interesting.has(this)) {
+                this.addEventListener('load', function () { beat(1e9); });
+              }
+            } catch (e) {}
+            return send.apply(this, arguments);
+          };
+        }
+      } catch (e) {}
+
+      post('hello');
+    })();
     """#
 }

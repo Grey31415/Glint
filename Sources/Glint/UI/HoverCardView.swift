@@ -327,11 +327,18 @@ private struct ThreadRow: View {
     /// The lines under the name.
     ///
     /// `messages` is empty for a thread that is not waiting on you - one you
-    /// have answered, which lingers on the card for five minutes - so the
-    /// single preview stands in there, and the row looks exactly as it did.
+    /// have answered, which lingers on the card for five minutes - so a single
+    /// line stands in there and the row looks exactly as it did.
+    ///
+    /// Which line matters. For a thread you answered it has to be the message
+    /// you answered, kept aside before the trim, because `preview` is the
+    /// newest item in the conversation and by the next poll that is your own
+    /// reply - printed as theirs, above `SentReplyRow` printing it again.
+    /// `isMine` catches the same thing for a thread answered somewhere else.
     private var previews: [ThreadMessage] {
         if !thread.messages.isEmpty { return thread.messages }
-        guard !thread.preview.isEmpty else { return [] }
+        if let answered = thread.answeredMessage { return [answered] }
+        guard !thread.isMine, !thread.preview.isEmpty else { return [] }
         return [ThreadMessage(id: thread.id, preview: thread.preview, kind: thread.kind,
                               image: nil, date: thread.date)]
     }

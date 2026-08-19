@@ -289,6 +289,12 @@ up, so without that memory a conversation you had dealt with would keep counting
 The remembered date is compared against the thread's newest item, which is what
 brings the row back the moment they write again.
 
+The line *above* the answer is the message that answer was answering, kept aside
+at the moment the unread run is trimmed. `preview` cannot do that job: it is
+whatever is newest in the conversation, so one poll after a send it is your own
+reply, and the row printed it as though they had written it, directly above
+Glint's own copy of the same words. The pair read as one message twice.
+
 ### Answering from the menu
 
 Return sends and Shift-Return breaks the line, or the other way round -

@@ -130,6 +130,16 @@ struct DirectThread: Identifiable, Equatable {
     /// How many were unread before the cap, so the row can say what it is not
     /// showing.
     let unreadCount: Int
+    /// The last thing they wrote before you answered, once `answered(upTo:)`
+    /// has taken it out of `messages`.
+    ///
+    /// `preview` cannot stand in for it. That is whatever is newest in the
+    /// conversation, and the moment the poll catches up with your reply the
+    /// newest thing is your own message - so the row printed the answer as
+    /// though they had written it, directly above the copy `SentReplyRow`
+    /// draws underneath, and the pair read as the same message twice. Kept
+    /// here instead, where trimming still has the real one in hand.
+    var answeredMessage: ThreadMessage? = nil
 
     /// Where clicking this row goes.
     var url: URL? {
@@ -180,7 +190,10 @@ struct DirectThread: Identifiable, Equatable {
                             isMuted: isMuted,
                             date: date,
                             messages: kept,
-                            unreadCount: kept.count)
+                            unreadCount: kept.count,
+                            // Oldest first, so the newest of the ones being
+                            // dropped is the one the answer was answering.
+                            answeredMessage: messages.last { $0.date <= when } ?? answeredMessage)
     }
 
     /// Which bucket this thread counts toward, if unread.

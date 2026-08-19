@@ -86,8 +86,48 @@ enum DotGeometry {
         return capsuleWidth(text: countText, height: height)
     }
 
+    /// How much of the number is on screen, 0 to 1.
+    ///
+    /// A ramp rather than a threshold, because the capsule is sized from it as
+    /// well as the digits. The number used to blink on at a fixed point in the
+    /// approach, which left the capsule a choice between staying circle-sized -
+    /// and cutting the digits off against its own edge - or jumping to full
+    /// width in a single frame. Fading it in across a stretch lets the shape
+    /// grow with it, and both read the answer from here so they cannot
+    /// disagree about whether there is room.
+    static func countReveal(count: Int, showCount: Bool, progress: CGFloat) -> CGFloat {
+        guard count > 0 else { return 0 }
+        guard !showCount else { return 1 }
+        return min(max((progress - 0.05) / 0.35, 0), 1)
+    }
+
+    /// The dot's height part-way through the approach, before magnification.
+    static func liveHeight(rest: CGFloat, full: CGFloat, progress: CGFloat) -> CGFloat {
+        rest + (full - rest) * progress
+    }
+
     static func renderHeight(rest: CGFloat, full: CGFloat, progress: CGFloat, scale: CGFloat) -> CGFloat {
-        (rest + (full - rest) * progress) * scale
+        liveHeight(rest: rest, full: full, progress: progress) * scale
+    }
+
+    /// Width across the approach, never narrower than the number inside it.
+    ///
+    /// The capsule used to interpolate straight from the resting circle to the
+    /// full capsule while the digits were drawn at the size they end at. One
+    /// digit fits a half-grown capsule by luck. "42" spent the first third of
+    /// the approach wider than the shape holding it and "99+" the first half,
+    /// and the surface's own clip cut them off square - the edge of the menu
+    /// showing through the middle of the dot.
+    ///
+    /// The floor is measured at the height the dot has *now*, so the padding
+    /// the resting dot has is the padding it keeps the whole way, and it is
+    /// mixed in on `reveal` so the width never steps.
+    static func renderWidth(rest: CGFloat, active: CGFloat, text: String,
+                            height: CGFloat, reveal: CGFloat,
+                            progress: CGFloat, scale: CGFloat) -> CGFloat {
+        let base = rest + (active - rest) * progress
+        let needed = capsuleWidth(text: text, height: height)
+        return (base + max(0, needed - base) * reveal) * scale
     }
 
     /// Distance from the top of the screen to the top of a resting dot. Fixed,
@@ -139,8 +179,15 @@ enum MorphMetrics {
         let restW = DotGeometry.restWidth(countText: text, count: count,
                                           height: dotSize, showCount: showCount)
         let activeW = DotGeometry.activeWidth(countText: text, count: count, height: dotSize)
-        let h = DotGeometry.renderHeight(rest: restH, full: dotSize, progress: progress, scale: scale)
-        let w = (restW + (activeW - restW) * progress) * scale
+        let reveal = DotGeometry.countReveal(count: count, showCount: showCount, progress: progress)
+        // Unmagnified height first: the capsule's floor is measured against the
+        // height the dot has at this point in the approach, not the one it ends
+        // at, or a half-grown capsule would be padded for a full-grown number.
+        let liveH = DotGeometry.liveHeight(rest: restH, full: dotSize, progress: progress)
+        let h = liveH * scale
+        let w = DotGeometry.renderWidth(rest: restW, active: activeW, text: text,
+                                        height: liveH, reveal: reveal,
+                                        progress: progress, scale: scale)
         let top = DotGeometry.topY(menuBarHeight: menuBarHeight, restHeight: restH)
         // Where the resting dot ends, away from the notch. Fixed, whatever the
         // magnification does.

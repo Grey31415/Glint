@@ -410,6 +410,18 @@ centring that caused the trouble: both edges are still fixed points, one per
 phase, and the view holds this rectangle at rest size for as long as the menu is
 open, so the magnify spring is never in flight at the same time as the morph.
 
+The capsule is sized from the number it holds, at the height it has *now* rather
+than the height it ends at. With *Show the number without hovering* off the dot
+rests as a small circle and grows into a capsule as the cursor approaches, and
+the digits used to be drawn at their final size from the moment they appeared.
+One digit fitted a half-grown capsule by luck. "42" was wider than the shape
+holding it for the first third of the approach and "99+" for the first half, and
+the surface's own clip cut them off square, which looks like the edge of the
+menu showing through the middle of the dot. The digits and the capsule now read
+one reveal ramp, so the number fades in as the shape grows to meet it and
+neither can arrive without the other. The status ring is sized the same way, for
+the same reason.
+
 The other thing that travels is the dot itself, and only on its way out. As
 the menu takes over it slides *towards* the notch - right when it is docked on
 the left, left when it is docked on the right - and the surface's clip on the

@@ -8,7 +8,7 @@
 
 **a quieter way to keep up.**
 
-### [⬇︎ Download Glint for Mac](https://github.com/Grey31415/Glint/releases/latest/download/Glint.dmg)
+### [⬇︎ Download Glint for Mac](https://github.com/greywsnk/Glint/releases/latest/download/Glint.dmg)
 
 <sub>Free · macOS 14 or newer · Apple silicon and Intel</sub>
 
@@ -44,7 +44,7 @@ requests - each one separately, and all off to begin with.
 
 ## Installing
 
-1. [**Download Glint**](https://github.com/Grey31415/Glint/releases/latest/download/Glint.dmg), open the file and drag Glint into your Applications folder.
+1. [**Download Glint**](https://github.com/greywsnk/Glint/releases/latest/download/Glint.dmg), open the file and drag Glint into your Applications folder.
 
 2. Open Glint. macOS will say it *"could not verify that this app is free of
    malware"* - click **Done**. This is expected: Glint isn't registered with

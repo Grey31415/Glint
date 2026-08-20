@@ -5,7 +5,7 @@
 ## Build
 
 ```sh
-git clone https://github.com/Grey31415/Glint.git
+git clone https://github.com/greywsnk/Glint.git
 cd Glint
 ./Scripts/build_app.sh              # ./Glint.app
 CONFIG=debug ./Scripts/build_app.sh # faster build

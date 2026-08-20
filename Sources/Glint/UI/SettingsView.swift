@@ -514,8 +514,8 @@ private struct AboutPane: View {
                 Text("Made in Germany by Greyson Wiesenack")
                     .font(.system(size: 12, weight: .medium))
                     .padding(.top, 8)
-                Link("github.com/Grey31415/Glint",
-                     destination: URL(string: "https://github.com/Grey31415/Glint")!)
+                Link("github.com/greywsnk/Glint",
+                     destination: URL(string: "https://github.com/greywsnk/Glint")!)
                     .font(.system(size: 12))
                     .padding(.top, 6)
                 Text("MIT licensed")

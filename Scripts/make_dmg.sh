@@ -76,7 +76,7 @@ The app explains all of this on first launch, before asking for anything.
 
 
 Made in Germany by Greyson Wiesenack
-https://github.com/Grey31415/Glint
+https://github.com/greywsnk/Glint
 TXT
 
 mkdir -p "$DIST"

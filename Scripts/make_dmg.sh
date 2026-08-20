@@ -64,11 +64,15 @@ Glint asks you to sign in to Instagram. What that means:
 
   * What is kept is the session cookie, and macOS keeps it, under
     ~/Library/WebKit and ~/Library/HTTPStorages - the same places it
-    keeps Safari's. Glint has no account and no server.
+    keeps Safari's. Glint has no account and no server. Those files
+    are not locked away: any app you run can read them, the same as a
+    browser profile.
 
-  * Glint only ever talks to instagram.com. It makes the same two
-    requests the site makes for itself - your inbox and your activity
-    feed - and reads the numbers out. No analytics, no telemetry.
+  * Glint itself adds no tracking. No analytics, no telemetry. It
+    makes the same two requests the site makes for itself - your inbox
+    and your activity feed - and reads the numbers out. It loads
+    Instagram's real page to do that, so Instagram's own ad and
+    analytics resources load with it, as in a browser tab.
 
   * Settings -> Sign out erases the stored session from this Mac.
 

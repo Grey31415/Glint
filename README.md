@@ -115,25 +115,28 @@ anything.
 
 ## Could this get my account banned?
 
-Unlikely, but not impossible, and you should know why before you install it.
+Probably not. But it could, and you should know that before you install it.
 
-Instagram's terms ask you to use your account through their own apps and
-nothing else. Glint is something else, so it goes against those terms, the same
-as every other third-party Instagram client. No amount of good behaviour on
-Glint's part changes that, and it is the honest reason to think twice.
+Instagram's terms ask you to use your account through their apps and nothing
+else. Glint is something else. So it breaks those terms, like every other
+third-party Instagram client. Behaving well does not change that. It is the
+honest reason to think twice.
 
-What keeps the risk small is how Glint works. It is a real signed-in Instagram
-page in the same web engine Safari uses, asking for your inbox the way that
-page asks for it, about as often as an open tab would, and not at all while
-your Mac is asleep or locked. It never acts on its own either: replies go out
-when you press return, one at a time, to people already talking to you.
-Nothing is posted, followed, liked or messaged automatically, and automated
-behaviour in bulk is what account bans are aimed at.
+Here is why the risk stays small anyway. Glint is a real signed-in Instagram
+page, running in the same web engine Safari uses. It asks for your inbox the
+way that page asks for it. About as often as an open tab would. Not at all
+while your Mac is asleep or locked.
 
-If Instagram does object, what you will almost certainly meet first is a
-request to log in again, which the app handles. Anything worse than that is
-rare. Even so, it is your account, so if losing it would be a serious problem,
-saying no to this is a perfectly reasonable thing to do.
+It never acts on its own. Replies go out when you press return, one at a time,
+to people already talking to you. Nothing is posted, followed, liked or
+messaged for you. Bans are aimed at machines working in bulk. Glint cannot do
+that.
+
+If Instagram does object, it will almost certainly just ask you to log in
+again. The app handles that. Anything worse is rare.
+
+Still, it is your account. If losing it would hurt, say no. That is a fair
+answer.
 
 ## Something not working?
 

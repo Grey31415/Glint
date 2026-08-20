@@ -100,11 +100,14 @@ Short answer: yes, and you don't have to take my word for it.
 
 - **Glint never sees your password.** You type it into Instagram's own login
   page, exactly like you would in Safari.
-- **Nothing leaves your Mac.** Your login is stored by macOS in the same place it
-  keeps Safari's. Glint has no website, no account and no server to send
-  anything to.
-- **It only talks to Instagram.** It asks Instagram the same questions the
-  website asks itself, and reads the answer. No tracking, no analytics.
+- **The session stays on this Mac.** Your login is a cookie. macOS keeps it
+  where it keeps Safari's. Glint has no website, no account and no server to
+  send it to. It is not locked away, though. Any app you run can read it, the
+  same as a browser profile.
+- **Glint adds no tracking.** No analytics, no telemetry, no networking code of
+  its own. It does load Instagram's real page, so Instagram's own ad and
+  analytics resources load with it, exactly as in a browser tab. Glint cannot
+  strip those out.
 - **It only sends what you type.** Replies go out when you press return, and
   never otherwise. Glint writes nothing to your account on its own.
 - **You can undo it any time.** Settings → *Sign out* wipes the saved login off

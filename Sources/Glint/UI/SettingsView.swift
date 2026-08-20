@@ -456,8 +456,10 @@ private struct GeneralPane: View {
             }
             Divider().opacity(0.4)
             Note("""
-            Your password never goes through Glint, nothing but instagram.com is \
-            contacted, and the session lives in ~/Library/WebKit.
+            Your password never goes through Glint, and the session lives in \
+            ~/Library/WebKit, where any app you run could read it. Glint's own requests \
+            go to instagram.com and nowhere else. It adds no analytics, but it loads \
+            Instagram's real page, so Instagram's own load with it.
             """)
             .textSelection(.enabled)
             actions

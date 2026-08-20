@@ -27,17 +27,20 @@ struct WelcomeView: View {
                       detail: """
                       macOS keeps the login cookie for Glint in ~/Library/WebKit and \
                       ~/Library/HTTPStorages, the same way it keeps Safari's. Glint has no \
-                      account and no server. There is nowhere to send it.
+                      account and no server. There is nowhere to send it. Those files are \
+                      not locked away, though: any app you run as yourself can read them, \
+                      the same as a browser profile.
                       """)
 
                 Point(symbol: "arrow.left.arrow.right",
-                      title: "It only ever talks to instagram.com",
+                      title: "Glint adds no tracking of its own",
                       detail: """
-                      Glint makes the same two requests the website makes for itself, your \
+                      It makes the same two requests the website makes for itself, your \
                       inbox and your activity feed, and reads the numbers out of the \
-                      replies. The one thing it ever sends is a reply you have typed \
-                      yourself, at the moment you press return. No analytics. No \
-                      telemetry. No other destination.
+                      replies. No analytics, no telemetry, and the one thing it ever sends \
+                      is a reply you typed. It does load Instagram's real page to do this, \
+                      so Instagram's own ad and analytics resources load with it, exactly \
+                      as they would in a browser tab.
                       """)
 
                 Point(symbol: "xmark.circle",
@@ -112,23 +115,80 @@ private struct Point: View {
     }
 }
 
-/// The same promise, restated above the sign-in page itself - the moment it
+/// What the sign-in window is actually showing, as it changes.
+///
+/// The banner used to be a fixed sentence asserting that the page below it was
+/// Instagram's. Nothing checked that, so it would have gone on saying so over
+/// whatever had been loaded. Reading the committed host instead means the
+/// banner can contradict itself, which is the only version of it worth having.
+@MainActor
+final class LoginBannerModel: ObservableObject {
+    /// Host of the page currently in the window. Nil before the first load.
+    @Published private(set) var host: String?
+    /// Host of a navigation that was refused, until something else loads.
+    @Published private(set) var blocked: String?
+
+    func show(host: String?) {
+        self.host = host
+        blocked = nil
+    }
+
+    func show(blocked: String) {
+        self.blocked = blocked
+    }
+}
+
+/// Says whose page this is, above the sign-in page itself - the moment it
 /// actually matters.
 struct LoginBanner: View {
+    @ObservedObject var model: LoginBannerModel
+
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
-            Image(systemName: "lock.fill")
+            Image(systemName: symbol)
                 .font(.system(size: 11))
-                .foregroundStyle(Accent.current.glow)
-            Text("This is Instagram's own sign-in page. Your password goes to Instagram, not to Glint. Glint only keeps the session cookie macOS stores for it on this Mac.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(headline)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Palette.textMid)
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.thinMaterial)
+    }
+
+    private var symbol: String {
+        if model.blocked != nil { return "exclamationmark.triangle.fill" }
+        return model.host == nil ? "hourglass" : "lock.fill"
+    }
+
+    private var tint: Color {
+        if model.blocked != nil { return Palette.warning }
+        return model.host == nil ? Palette.textLo : Accent.current.glow
+    }
+
+    /// The host, verbatim. `Text` takes the plain-string overload here rather
+    /// than `LocalizedStringKey`, so nothing in a host name is ever parsed.
+    private var headline: String {
+        if let blocked = model.blocked { return "Blocked: \(blocked)" }
+        return model.host ?? "Loading Instagram's sign-in page"
+    }
+
+    private var detail: String {
+        if model.blocked != nil {
+            return "Glint refused to open that page. Signing in only ever happens on Instagram's own pages - nothing was loaded here."
+        }
+        guard model.host != nil else {
+            return "Nothing has loaded yet."
+        }
+        return "Your password goes to this page, not to Glint. Glint only keeps the session cookie macOS stores for it on this Mac."
     }
 }
